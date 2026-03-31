@@ -39,6 +39,7 @@ import dataRoutes from './routes/dataRoutes.js';
 import magicEditRoutes from './routes/magicEdit.routes.js';
 import legalRoutes from './routes/legalRoutes.js';
 import intentRoutes from './routes/intentRoutes.js';
+import aiAdAgentRoutes from './routes/aiAdAgent.routes.js';
 // import { startPlanExpiryService } from './services/planExpiryService.js';
 
 // End of standard imports
@@ -138,6 +139,7 @@ app.use('/api/payment', paymentRoutes);
 app.get('/api/debug-payment', (req, res) => res.json({ msg: "payment route check" }));
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api', dashboardRoutes);
+app.use('/api/ai-ad', aiAdAgentRoutes);
 
 // Admin Panel (Admin only)
 app.use('/api/admin', adminRoutes);

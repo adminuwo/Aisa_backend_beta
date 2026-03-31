@@ -54,22 +54,36 @@ export const uploadDocument = async (req, res) => {
             return res.status(400).json({ success: false, message: 'No file uploaded' });
         }
 
-        const fileBuffer = req.file.buffer;
         const originalName = req.file.originalname;
+        const fileBuffer = req.file.buffer;
         const mimeType = req.file.mimetype;
+        const category = req.body.category || 'General';
+        const assetType = req.body.assetType;
         const fileSize = req.file.size;
 
-        logger.info(`Received file for GCS upload: ${originalName} (${fileSize} bytes)`);
+        logger.info(`Received file for GCS upload: ${originalName} (${fileSize} bytes) - Category: ${category}`);
 
-        // 1. Upload to Google Cloud Storage (Vertex AI RAG bucket)
+        // 1. Upload to Google Cloud Storage
         let gcsUri = null;
         try {
-            logger.info("Uploading to Google Cloud Storage (aisa_knowledge_base)...");
+            let bucketName = 'aisa_knowledge_base';
+            let folderPath = '';
+
+            // Map AI Ad Agent specific folders
+            if (category === 'AiAdAsset') {
+                bucketName = 'social_media_agent_assets';
+                if (assetType === 'logo') folderPath = 'Brand Logo/';
+                else if (assetType === 'company') folderPath = 'Company overview Document/';
+                else if (assetType === 'calendar') folderPath = 'Content calender/';
+            }
+
+            logger.info(`Uploading to Google Cloud Storage bucket: ${bucketName}${folderPath ? `, folder: ${folderPath}` : ''}`);
+            
             const storageOptions = process.env.GCP_PROJECT_ID ? { projectId: process.env.GCP_PROJECT_ID } : {};
             const storageClient = new Storage(storageOptions);
-            const bucketName = 'aisa_knowledge_base';
             const bucket = storageClient.bucket(bucketName);
-            const gcsFileName = `${Date.now()}-${originalName.replace(/\s+/g, '_')}`;
+            
+            const gcsFileName = `${folderPath}${Date.now()}-${originalName.replace(/\s+/g, '_')}`;
             const fileRef = bucket.file(gcsFileName);
 
             await fileRef.save(fileBuffer, {
@@ -85,13 +99,11 @@ export const uploadDocument = async (req, res) => {
         }
 
         // 2. Dispatch Vertex AI RAG Engine Import (Run asynchronously)
-        if (gcsUri) {
+        if (gcsUri && category !== 'AiAdAsset') {
             vertexService.importToVertexRag(gcsUri, originalName).catch(err => {
                 logger.error(`Background Vertex RAG error for ${originalName}: ${err.message}`);
             });
         }
-
-        const category = req.body.category || 'General';
 
         // 3. Always Store Metadata (for listing)
         try {
