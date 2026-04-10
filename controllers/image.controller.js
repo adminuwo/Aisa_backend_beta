@@ -184,7 +184,7 @@ IMPORTANT: DO NOT just return the original image unchanged. You MUST apply the t
         //               FALLBACK: imagen-3.0-capability-001 (REST, for precise inpainting)
         //  - Generation → use selectedModelId (Imagen REST)
         // -------------------------------------------------------
-        const GEMINI_EDIT_MODEL  = 'gemini-2.5-flash-image';
+        const GEMINI_EDIT_MODEL  = 'gemini-1.5-pro';
         const IMAGEN_FALLBACK     = 'imagen-3.0-capability-001';
         const IMAGEN_GEN_FALLBACK = selectedModelId === 'imagen-4.0-ultra-generate-001'
             ? 'imagen-3.0-generate-001'

@@ -203,7 +203,7 @@ export const executeImagePipeline = async (rawPrompt, generateFunction, context)
     let lastError = null;
     
     const fallbackMap = {
-        'imagen-3.0-generate-001': 'gemini-2.5-flash-image', // Usually we don't need this, but good to have
+        'imagen-3.0-generate-001': 'imagen-3.0-generate-002', // Clean Imagen fallback
         'imagen-4.0-ultra-generate-001': 'imagen-3.0-generate-001'
     };
 

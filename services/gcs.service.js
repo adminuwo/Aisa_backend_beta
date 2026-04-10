@@ -32,64 +32,31 @@ const bucket = storage.bucket(BUCKET_NAME);
  * @param {number} [expiresInMinutes=10080] - (7 days default)
  * @returns {Promise<string>}
  */
-import crypto from 'crypto';
 
 export const getSignedUrl = async (gcsPath, expiresInMinutes = 360) => {
     try {
+        const file = bucket.file(gcsPath);
+        const expires = Date.now() + expiresInMinutes * 60 * 1000;
         const targetPrincipal = process.env.VIDEO_SERVICE_ACCOUNT;
-        if (!targetPrincipal) {
-            // Fallback to standard SDK method if no impersonator is defined
-            const file = bucket.file(gcsPath);
-            const [url] = await file.getSignedUrl({
-                version: 'v4', action: 'read', expires: Date.now() + expiresInMinutes * 60 * 1000
-            });
-            return url;
+
+        const signOptions = {
+            version: 'v4',
+            action: 'read',
+            expires,
+        };
+
+        // If a service account is configured, use it as the issuer for the signed URL.
+        // The ADC user (sanskar@uwo24.com) must have Service Account Token Creator on this SA.
+        if (targetPrincipal) {
+            signOptions.issuer = targetPrincipal;
         }
 
-        // Custom Native V4 Construction calling IAM SignBlob directly
-        const { GoogleAuth } = await import('google-auth-library');
-        const auth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/cloud-platform'] });
-        const client = await auth.getClient();
-        
-        const method = 'GET';
-        const expiresSeconds = expiresInMinutes * 60;
-        const timestamp = new Date().toISOString().replace(/[:-]|\.\d{3}/g, '');
-        const dateStr = timestamp.substring(0, 8);
-        
-        const host = 'storage.googleapis.com';
-        const canonicalUri = `/${BUCKET_NAME}/${encodeURIComponent(gcsPath).replace(/%2F/g, '/')}`;
-        const canonicalQueryString = [
-            `X-Goog-Algorithm=GOOG4-RSA-SHA256`,
-            `X-Goog-Credential=${encodeURIComponent(targetPrincipal + '/' + dateStr + '/auto/storage/goog4_request')}`,
-            `X-Goog-Date=${timestamp}`,
-            `X-Goog-Expires=${expiresSeconds}`,
-            `X-Goog-SignedHeaders=host`
-        ].join('&');
-        
-        const canonicalRequest = [ method, canonicalUri, canonicalQueryString, `host:${host}\n`, 'host', 'UNSIGNED-PAYLOAD' ].join('\n');
-        const canonicalRequestHash = crypto.createHash('sha256').update(canonicalRequest, 'utf8').digest('hex');
-        
-        const stringToSign = [
-            'GOOG4-RSA-SHA256',
-            timestamp,
-            `${dateStr}/auto/storage/goog4_request`,
-            canonicalRequestHash
-        ].join('\n');
-        
-        const b64Encoded = Buffer.from(stringToSign).toString('base64');
-        
-        const res = await client.request({
-            url: `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${targetPrincipal}:signBlob`,
-            method: 'POST',
-            data: { delegates: [], payload: b64Encoded }
-        });
-        
-        const signature = Buffer.from(res.data.signedBlob, 'base64').toString('hex');
-        return `https://${host}${canonicalUri}?${canonicalQueryString}&X-Goog-Signature=${signature}`;
+        const [url] = await file.getSignedUrl(signOptions);
+        return url;
 
     } catch (err) {
-        console.error("[GCS NATIVE SIGNING ERROR]", err.response?.data || err);
-        logger.error(`[GCS] Failed to generate signed URL natively: ${err.message}`);
+        console.error('[GCS SIGNING ERROR]', err.response?.data || err.message);
+        logger.error(`[GCS] Failed to generate signed URL: ${err.message}`);
         return `https://storage.googleapis.com/${BUCKET_NAME}/${gcsPath}`;
     }
 };

@@ -42,7 +42,8 @@ const messageSchema = new mongoose.Schema({
     description: String
   }],
   agentName: String,
-  agentCategory: String
+  agentCategory: String,
+  suggestions: [String]
 });
 
 const chatSessionSchema = new mongoose.Schema({

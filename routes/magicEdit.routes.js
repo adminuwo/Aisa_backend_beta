@@ -64,12 +64,14 @@ CRITICAL: DO NOT JUST MODIFY THE ORIGINAL IMAGE. Create a cinematic, 8k, photore
                 {
                     role: 'user',
                     parts: [
-                        { text: systemInstruction },
                         {
                             inlineData: {
                                 mimeType: file.mimetype,
                                 data: imageBase64,
                             },
+                        },
+                        { 
+                            text: systemInstruction 
                         },
                     ],
                 },
