@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 import express from "express";
 import ChatSession from "../models/ChatSession.js";
-import { generativeModel, genAIInstance, modelName as primaryModelName, systemInstructionText } from "../config/vertex.js";
+import { generativeModel, genAIInstance, modelName as primaryModelName } from "../config/vertex.js";
 import userModel from "../models/User.js";
 import Guest from "../models/Guest.js";
 import { verifyToken, optionalVerifyToken } from "../middleware/authorization.js";

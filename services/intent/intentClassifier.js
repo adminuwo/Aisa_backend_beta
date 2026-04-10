@@ -46,7 +46,8 @@ ${toolList}
 10. **LEGAL SMART SUGGESTIONS**: If the intent is legal (starts with legal_), you MUST provide 2-3 extra relevant tool IDs in the "suggestions" array that could help the user further.
     - Example: User wants a "Legal Notice for non-payment" -> intent: legal_notice_generator, suggestions: ["legal_evidence_checker", "legal_case_predictor", "legal_strategy_engine"].
     - Example: User asks "Is this contract safe?" -> intent: legal_contract_analyzer, suggestions: ["legal_clause_scanner", "legal_clause_rewriter"].
-11. estimated_credits = sum of creditCost for all tools in the pipeline.
+12. **STOCK ANALYSIS**: If the user asks about a stock (e.g. "Reliance analysis", "TCS buy or sell", "What about Google stock?"), use stock_researcher. Always try to extract the likely stock symbol or name into metadata.stock_symbol if possible.
+13. estimated_credits = sum of creditCost for all tools in the pipeline.
 
 ## Tool Credit Costs (for estimated_credits calculation)
 - normal_chat: 0
@@ -58,6 +59,7 @@ ${toolList}
 - text_to_audio: 25
 - web_search: 15
 - deep_search: 30
+- stock_researcher: 50
 - code_writer: 10
 - file_analysis: 5
 - file_conversion: 15
@@ -76,6 +78,8 @@ ${toolList}
 - legal_timeline_generator: 95
 - legal_compliance_checker: 140
 - legal_law_comparator: 160
+- stock_researcher: 50
+- legal_argument_builder: 180
 
 ## Output JSON Schema (return EXACTLY this structure)
 {

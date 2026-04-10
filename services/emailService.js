@@ -3,14 +3,27 @@ import nodemailer from 'nodemailer';
 // Email configuration from environment variables
 const EMAIL_CONFIG = {
     service: process.env.EMAIL_SERVICE || 'gmail',
-    user: process.env.EMAIL_USER || 'your-email@gmail.com',
+    user: process.env.EMAIL || process.env.EMAIL_USER || 'verification@ai-mall.in',
     password: process.env.EMAIL_PASSWORD || 'your-app-password',
-    adminEmail: process.env.ADMIN_EMAIL || 'admin@aimall.com'
+    adminEmail: process.env.ADMIN_EMAIL || 'admin@uwo24.com'
 };
 
 // Create transporter
 const createTransporter = () => {
     try {
+        // Use Resend SMTP if API key is provided
+        if (process.env.RESEND_API_KEY) {
+            return nodemailer.createTransport({
+                host: "smtp.resend.com",
+                port: 465,
+                secure: true,
+                auth: {
+                    user: "resend", // Resend SMTP username is always "resend"
+                    pass: process.env.RESEND_API_KEY
+                }
+            });
+        }
+
         return nodemailer.createTransport({
             service: EMAIL_CONFIG.service,
             auth: {
@@ -193,6 +206,106 @@ export const sendFeedbackAdminNotification = async (feedback) => {
         return { success: true, message: 'Email sent to admin' };
     } catch (error) {
         console.error('[EMAIL SERVICE] Failed to send feedback email:', error);
+        return { success: false, message: error.message };
+    }
+};
+
+/**
+ * Send AI CashFlow Report to user
+ */
+export const sendCashFlowReport = async (userEmail, userName, stockData, analysis, news) => {
+    const transporter = createTransporter();
+    if (!transporter) {
+        console.warn('[EMAIL SERVICE] Transporter not configured, skipping email');
+        return { success: false, message: 'Email service not configured' };
+    }
+
+    const newsHtml = news.map(n => `
+        <div style="margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #edf2f7;">
+            <a href="${n.url}" style="color: #4f46e5; text-decoration: none; font-weight: bold; font-size: 16px;">${n.title}</a>
+            <p style="margin: 5px 0; color: #718096; font-size: 14px;">${n.summary}</p>
+            <span style="font-size: 12px; color: #a0aec0;">Source: ${n.source} | Sentiment: ${n.overall_sentiment_label}</span>
+        </div>
+    `).join('');
+
+    const mailOptions = {
+        from: EMAIL_CONFIG.user,
+        to: userEmail,
+        subject: `📈 AI CashFlow Report – ${stockData.symbol}`,
+        html: `
+            <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 800px; margin: 0 auto; background: #ffffff; color: #2d3748;">
+                <div style="background: linear-gradient(135deg, #1a202c 0%, #2d3748 100%); padding: 40px 20px; text-align: center; color: white;">
+                    <h1 style="margin: 0; font-size: 28px; letter-spacing: 1px;">AI CashFlow Report</h1>
+                    <p style="margin: 10px 0 0; opacity: 0.8;">Market Insights & Automated Analysis</p>
+                </div>
+
+                <div style="padding: 30px; border: 1px solid #e2e8f0; border-top: none;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 30px; border-bottom: 2px solid #edf2f7; padding-bottom: 20px;">
+                        <div>
+                            <h2 style="margin: 0; color: #1a202c; font-size: 24px;">${stockData.symbol}</h2>
+                            <p style="margin: 5px 0; color: #718096; font-weight: 500;">Real-time Market Data</p>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="font-size: 32px; font-weight: bold; color: #1a202c;">$${stockData.price}</div>
+                            <div style="color: ${stockData.change.startsWith('-') ? '#e53e3e' : '#38a169'}; font-weight: bold;">
+                                ${stockData.change} (${stockData.changePercent})
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px;">
+                        <div style="background: #f7fafc; padding: 15px; border-radius: 8px;">
+                            <p style="margin: 0; color: #718096; font-size: 13px; text-transform: uppercase;">Day High</p>
+                            <p style="margin: 5px 0 0; font-size: 18px; font-weight: bold;">$${stockData.high}</p>
+                        </div>
+                        <div style="background: #f7fafc; padding: 15px; border-radius: 8px;">
+                            <p style="margin: 0; color: #718096; font-size: 13px; text-transform: uppercase;">Day Low</p>
+                            <p style="margin: 5px 0 0; font-size: 18px; font-weight: bold;">$${stockData.low}</p>
+                        </div>
+                        <div style="background: #f7fafc; padding: 15px; border-radius: 8px;">
+                            <p style="margin: 0; color: #718096; font-size: 13px; text-transform: uppercase;">Volume</p>
+                            <p style="margin: 5px 0 0; font-size: 18px; font-weight: bold;">${Number(stockData.volume).toLocaleString()}</p>
+                        </div>
+                        <div style="background: #f7fafc; padding: 15px; border-radius: 8px;">
+                            <p style="margin: 0; color: #718096; font-size: 13px; text-transform: uppercase;">Prev Close</p>
+                            <p style="margin: 5px 0 0; font-size: 18px; font-weight: bold;">$${stockData.previousClose}</p>
+                        </div>
+                    </div>
+
+                    <div style="margin-bottom: 40px;">
+                        <h3 style="border-left: 4px solid #4f46e5; padding-left: 15px; color: #1a202c; margin-bottom: 20px;">AI Analysis & Insights</h3>
+                        <div style="background: #f0f4ff; padding: 25px; border-radius: 12px; line-height: 1.6; color: #2d3748; white-space: pre-wrap;">${analysis}</div>
+                    </div>
+
+                    <div style="margin-bottom: 40px;">
+                        <h3 style="border-left: 4px solid #4f46e5; padding-left: 15px; color: #1a202c; margin-bottom: 20px;">Correlated News Feed</h3>
+                        ${newsHtml || '<p style="color: #a0aec0;">No recent news available for this ticker.</p>'}
+                    </div>
+
+                    <div style="background: #fff5f5; border: 1px solid #feb2b2; padding: 20px; border-radius: 8px; margin-top: 40px;">
+                        <h4 style="margin: 0 0 10px; color: #c53030; font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em;">Financial Disclaimer</h4>
+                        <p style="margin: 0; color: #742a2a; font-size: 13px; line-height: 1.5;">
+                            This report is generated for informational purposes only using AI analysis and market data from AlphaVantage. 
+                            <strong>It does not constitute financial advice, investment recommendations, or a solicitation to buy/sell any securities.</strong> 
+                            Always consult with a qualified financial advisor before making any investment decisions.
+                        </p>
+                    </div>
+
+                    <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #edf2f7; text-align: center; color: #a0aec0; font-size: 12px;">
+                        <p style="margin: 0;">&copy; ${new Date().getFullYear()} AISA Intelligence Platform. All rights reserved.</p>
+                        <p style="margin: 5px 0 0;">This report was requested by ${userName} (${userEmail}).</p>
+                    </div>
+                </div>
+            </div>
+        `
+    };
+
+    try {
+        await transporter.sendMail(mailOptions);
+        logger.info(`[EMAIL SERVICE] CashFlow report sent to ${userEmail}`);
+        return { success: true, message: 'Report sent successfully' };
+    } catch (error) {
+        logger.error('[EMAIL SERVICE] Failed to send CashFlow report:', error);
         return { success: false, message: error.message };
     }
 };

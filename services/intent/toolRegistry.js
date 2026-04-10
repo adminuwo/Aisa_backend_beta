@@ -456,6 +456,21 @@ export const TOOL_REGISTRY = {
         isInternal: false,
         emoji: '🏛️',
         modeKey: 'LEGAL_TOOLKIT'
+    },
+    stock_researcher: {
+        name: 'AI Stock Researcher',
+        description: 'Professional stock analysis, risk evaluation, and recommendations (AI Snapshot)',
+        inputs: ['text'],
+        outputs: ['text', 'snapshot'],
+        handler: 'chatRoutes',
+        endpoint: '/api/chat',
+        creditCost: 50,
+        isPremium: true,
+        requiresAssets: false,
+        dependencies: [],
+        isInternal: false,
+        emoji: '📈',
+        modeKey: 'STOCK_RESEARCH'
     }
 };
 

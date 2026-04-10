@@ -163,23 +163,51 @@ ProjectRoot/
             toolRestrictions = "\n\n### MODE: NORMAL CHAT. Strictly avoid executing magic actions. Answer questions using text only. If the user wants to generate media, tell them to use the AISA Magic Tools menu.";
         }
 
-        // --- INTENT CLASSIFICATION (NEW: LEGAL SMART) ---
+        // --- INTENT CLASSIFICATION (NEW: STOCK & LEGAL SMART) ---
+        let classification = null;
         let legalInstruction = "";
         try {
             // Build simple conversation summary for classifier
             const chatSummary = (combinedHistory || []).slice(-3).map(m => `${m.role}: ${m.content || m.text}`).join(' | ');
-            const classification = await classifyIntent(message, images || documents || [], chatSummary);
+            classification = await classifyIntent(message, images || documents || [], chatSummary);
             
-            // Only apply specialized prompt if we aren't ALREADY in LEGAL_TOOLKIT mode with this tool
-            // Or if we came from generic chat and discovered a legal intent.
-            const isRedundant = mode === 'LEGAL_TOOLKIT' && (toolName === classification?.intent);
-
-            if (!isRedundant && classification && classification.intent && classification.intent.startsWith('legal_')) {
-                logger.info(`[AI-Service] Legal Intent Detected: ${classification.intent}. Applying specialized prompts.`);
-                legalInstruction = `\n\n### SPECIALIZED LEGAL TOOL: ${classification.intent}\n${getLegalPrompt(classification.intent)}`;
+            // 1. LEGAL SMART ROUTING
+            if (classification && classification.intent && classification.intent.startsWith('legal_')) {
+                // Only apply specialized prompt if we aren't ALREADY in LEGAL_TOOLKIT mode with this tool
+                const isRedundant = mode === 'LEGAL_TOOLKIT' && (toolName === classification?.intent);
+                if (!isRedundant) {
+                   logger.info(`[AI-Service] Legal Intent Detected: ${classification.intent}. Applying specialized prompts.`);
+                   legalInstruction = `\n\n### SPECIALIZED LEGAL TOOL: ${classification.intent}\n${getLegalPrompt(classification.intent)}`;
+                }
             }
         } catch (intentErr) {
             logger.warn(`[AI-Service] Intent classification failed: ${intentErr.message}`);
+        }
+
+        // --- INTENT-BASED TOOL ROUTING (NEW: STOCKS) ---
+        if (classification && (classification.intent === 'stock_researcher' || classification.tools?.includes('stock_researcher'))) {
+            logger.info(`[AI-Service] Stock Researcher intent detected. Triggering Snapshot...`);
+            
+            // Try to extract symbol from metadata or message
+            let symbol = classification.metadata?.stock_symbol || null;
+            if (!symbol) {
+                // Secondary extraction: find words in CAPS like RELIANCE, TCS, AAPL
+                const capsMatch = message.match(/\b[A-Z]{2,10}\b/);
+                if (capsMatch) symbol = capsMatch[0];
+            }
+
+            if (symbol) {
+                const { getAiSnapshot } = await import('./stockService.js');
+                const snapshot = await getAiSnapshot(symbol);
+                if (snapshot) {
+                    finalResponseData = { 
+                        text: `Here is my detailed analysis for **${symbol}**. I've compiled an AI Snapshot with risk analysis, performance metrics, and professional recommendations.`,
+                        snapshot: snapshot,
+                        type: 'stock_snapshot'
+                    };
+                    return finalResponseData;
+                }
+            }
         }
 
         // Construct dynamic instruction without legal rule (it will be added at the absolute end)
