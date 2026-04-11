@@ -699,13 +699,24 @@ router.post("/apple/callback", async (req, res) => {
     const clientId = process.env.APPLE_CLIENT_ID;
     const teamId = process.env.APPLE_TEAM_ID;
     const keyId = process.env.APPLE_KEY_ID;
-    const privateKey = process.env.APPLE_PRIVATE_KEY?.replace(/\\n/g, '\n');
-
+    let privateKey = process.env.APPLE_PRIVATE_KEY;
+    
     // EXPLICIT CHECK FOR VARIABLES
     if (!clientId) throw new Error("APPLE_CLIENT_ID is missing from server env");
     if (!teamId) throw new Error("APPLE_TEAM_ID is missing from server env");
     if (!keyId) throw new Error("APPLE_KEY_ID is missing from server env");
     if (!privateKey) throw new Error("APPLE_PRIVATE_KEY is missing from server env");
+
+    // Clean up private key (handle quotes and escaped newlines)
+    privateKey = privateKey.trim();
+    if (privateKey.startsWith('"') && privateKey.endsWith('"')) {
+      privateKey = privateKey.substring(1, privateKey.length - 1);
+    }
+    privateKey = privateKey.replace(/\\n/g, '\n');
+
+    if (!privateKey.includes('BEGIN PRIVATE KEY')) {
+      throw new Error("APPLE_PRIVATE_KEY format is invalid (missing BEGIN header)");
+    }
 
     let finalIdToken = bodyIdToken;
 
