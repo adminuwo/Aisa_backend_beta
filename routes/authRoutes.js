@@ -13,6 +13,7 @@ import { uploadToGCS, gcsFilename } from "../services/gcs.service.js";
 import { OAuth2Client } from "google-auth-library";
 import { getSmartAvatar, isGeneratedAvatar } from "../utils/avatarHelper.js";
 import { verifyToken } from "../middleware/authorization.js";
+import appleSignin from 'apple-signin-auth';
 
 const router = express.Router();
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
@@ -669,9 +670,90 @@ router.get("/microsoft", (req, res) => {
 });
 
 router.get("/apple", (req, res) => {
-  const { email } = req.query;
-  // Apple always redirects to simulation until real keys provided (requires complex private key setup)
-  res.send(devLoginTemplate('Apple', email));
+  const clientId = process.env.APPLE_CLIENT_ID;
+  if (!clientId || !process.env.APPLE_TEAM_ID || !process.env.APPLE_KEY_ID || !process.env.APPLE_PRIVATE_KEY) {
+    // Fallback to simulation template if credentials are missing
+    return res.send(devLoginTemplate('Apple', req.query.email));
+  }
+
+  const redirectUri = `${process.env.BACKEND_URL || 'http://localhost:8080'}/api/auth/apple/callback`;
+  const scope = 'name email';
+  const state = crypto.randomBytes(16).toString('hex');
+
+  const authorizationUrl = appleSignin.getAuthorizationUrl({
+    clientID: clientId,
+    redirectUri: redirectUri,
+    scope: scope,
+    state: state,
+    responseMode: 'form_post', // Apple requires form_post for name/email
+  });
+
+  res.redirect(authorizationUrl);
+});
+
+router.post("/apple/callback", async (req, res) => {
+  console.log(`[DEBUG Apple Callback Body]:`, JSON.stringify(req.body));
+  const { code, id_token, user: userJson, state } = req.body;
+
+  try {
+    const clientId = process.env.APPLE_CLIENT_ID;
+    const teamId = process.env.APPLE_TEAM_ID;
+    const keyId = process.env.APPLE_KEY_ID;
+    const privateKey = process.env.APPLE_PRIVATE_KEY?.replace(/\\n/g, '\n');
+
+    // 1. Verify the ID Token
+    const tokenResponse = await appleSignin.verifyIdToken(id_token, {
+      audience: clientId,
+      ignoreExpiration: false,
+    });
+
+    const { sub: providerId, email } = tokenResponse;
+
+    // 2. Exchange code for token (Optional but validates the setup)
+    if (code) {
+      try {
+        const clientSecret = appleSignin.getClientSecret({
+          clientID: clientId,
+          teamID: teamId,
+          keyID: keyId,
+          privateKey: privateKey,
+        });
+
+        await appleSignin.getAuthorizationToken(code, {
+          clientID: clientId,
+          clientSecret: clientSecret,
+          redirectUri: `${process.env.BACKEND_URL || 'http://localhost:8080'}/api/auth/apple/callback`,
+        });
+      } catch (clientErr) {
+        console.error(`[Apple Client Secret Error]:`, clientErr.message);
+        // We continue because verifyIdToken already succeeded, but this log helps debug keys
+      }
+    }
+
+    let name = '';
+    if (userJson) {
+      const userData = JSON.parse(userJson);
+      if (userData.name) {
+        name = `${userData.name.firstName || ''} ${userData.name.lastName || ''}`.trim();
+      }
+    }
+
+    const profile = {
+      provider: 'apple',
+      providerId,
+      email: email,
+      name: name || email.split('@')[0],
+      picture: `https://ui-avatars.com/api/?name=${encodeURIComponent(name || 'Apple User')}&background=000&color=fff`
+    };
+
+    return handleSocialUser(profile, res);
+
+  } catch (err) {
+    console.error(`[Apple Auth Overall Error]:`, err.message);
+    if (err.stack) console.error(err.stack); // Print stack trace to Logs for deep debugging
+    const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+    return res.redirect(`${frontendUrl}/login?error=${encodeURIComponent("Apple login failed")}`);
+  }
 });
 
 router.get("/twitter", (req, res) => {
