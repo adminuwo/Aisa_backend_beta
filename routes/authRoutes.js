@@ -693,7 +693,7 @@ router.get("/apple", (req, res) => {
 
 router.post("/apple/callback", async (req, res) => {
   console.log(`[DEBUG Apple Callback Body]:`, JSON.stringify(req.body));
-  const { code, id_token, user: userJson, state } = req.body;
+  const { code, id_token: bodyIdToken, user: userJson, state } = req.body;
 
   try {
     const clientId = process.env.APPLE_CLIENT_ID;
@@ -701,15 +701,9 @@ router.post("/apple/callback", async (req, res) => {
     const keyId = process.env.APPLE_KEY_ID;
     const privateKey = process.env.APPLE_PRIVATE_KEY?.replace(/\\n/g, '\n');
 
-    // 1. Verify the ID Token
-    const tokenResponse = await appleSignin.verifyIdToken(id_token, {
-      audience: clientId,
-      ignoreExpiration: false,
-    });
+    let finalIdToken = bodyIdToken;
 
-    const { sub: providerId, email } = tokenResponse;
-
-    // 2. Exchange code for token (Optional but validates the setup)
+    // 1. If we have a code, exchange it for tokens (this is the standard web flow)
     if (code) {
       try {
         const clientSecret = appleSignin.getClientSecret({
@@ -719,16 +713,32 @@ router.post("/apple/callback", async (req, res) => {
           privateKey: privateKey,
         });
 
-        await appleSignin.getAuthorizationToken(code, {
+        const tokenResponse = await appleSignin.getAuthorizationToken(code, {
           clientID: clientId,
           clientSecret: clientSecret,
           redirectUri: `${process.env.BACKEND_URL || 'http://localhost:8080'}/api/auth/apple/callback`,
         });
+
+        if (tokenResponse.id_token) {
+          finalIdToken = tokenResponse.id_token;
+        }
       } catch (clientErr) {
-        console.error(`[Apple Client Secret Error]:`, clientErr.message);
-        // We continue because verifyIdToken already succeeded, but this log helps debug keys
+        console.error(`[Apple Client Secret/Exchange Error]:`, clientErr.message);
+        throw new Error(`Failed to exchange Apple code: ${clientErr.message}`);
       }
     }
+
+    if (!finalIdToken) {
+      throw new Error("No ID Token received from Apple in body or via exchange.");
+    }
+
+    // 2. Verify the ID Token (either from body or from exchange)
+    const verifiedToken = await appleSignin.verifyIdToken(finalIdToken, {
+      audience: clientId,
+      ignoreExpiration: false,
+    });
+
+    const { sub: providerId, email } = verifiedToken;
 
     let name = '';
     if (userJson) {
@@ -750,9 +760,8 @@ router.post("/apple/callback", async (req, res) => {
 
   } catch (err) {
     console.error(`[Apple Auth Overall Error]:`, err.message);
-    if (err.stack) console.error(err.stack); // Print stack trace to Logs for deep debugging
     const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
-    return res.redirect(`${frontendUrl}/login?error=${encodeURIComponent("Apple login failed")}`);
+    return res.redirect(`${frontendUrl}/login?error=${encodeURIComponent("Apple login failed: " + err.message)}`);
   }
 });
 
