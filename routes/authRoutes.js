@@ -696,11 +696,15 @@ router.post("/apple/callback", async (req, res) => {
   const { code, id_token: bodyIdToken, user: userJson, state } = req.body;
 
   try {
+    console.log(`[DEBUG Apple] Apple Callback started. Code: ${code ? 'Present' : 'Missing'}, ID Token: ${bodyIdToken ? 'Present' : 'Missing'}`);
+
     const clientId = process.env.APPLE_CLIENT_ID;
     const teamId = process.env.APPLE_TEAM_ID;
     const keyId = process.env.APPLE_KEY_ID;
     let privateKey = process.env.APPLE_PRIVATE_KEY;
     
+    console.log(`[DEBUG Apple] Env Vars - ClientID: ${clientId}, TeamID: ${teamId}, KeyID: ${keyId}, PrivateKey: ${privateKey ? 'Present (' + privateKey.length + ' chars)' : 'Missing'}`);
+
     // EXPLICIT CHECK FOR VARIABLES
     if (!clientId) throw new Error("APPLE_CLIENT_ID is missing from server env");
     if (!teamId) throw new Error("APPLE_TEAM_ID is missing from server env");
@@ -715,6 +719,7 @@ router.post("/apple/callback", async (req, res) => {
     privateKey = privateKey.replace(/\\n/g, '\n');
 
     if (!privateKey.includes('BEGIN PRIVATE KEY')) {
+      console.error(`[DEBUG Apple] Invalid key prefix: ${privateKey.substring(0, 30)}...`);
       throw new Error("APPLE_PRIVATE_KEY format is invalid (missing BEGIN header)");
     }
 
@@ -722,6 +727,7 @@ router.post("/apple/callback", async (req, res) => {
 
     // 1. If we have a code, exchange it for tokens (this is the standard web flow)
     if (code) {
+      console.log(`[DEBUG Apple] Attempting code exchange...`);
       try {
         const clientSecret = appleSignin.getClientSecret({
           clientID: clientId,
@@ -729,12 +735,16 @@ router.post("/apple/callback", async (req, res) => {
           keyIdentifier: keyId,
           privateKey: privateKey,
         });
+        
+        console.log(`[DEBUG Apple] Client Secret generated successfully.`);
 
         const tokenResponse = await appleSignin.getAuthorizationToken(code, {
           clientID: clientId,
           clientSecret: clientSecret,
           redirectUri: `${process.env.BACKEND_URL || 'http://localhost:8080'}/api/auth/apple/callback`,
         });
+
+        console.log(`[DEBUG Apple] Token Exchange successful. ID Token present: ${!!tokenResponse.id_token}`);
 
         if (tokenResponse.id_token) {
           finalIdToken = tokenResponse.id_token;
