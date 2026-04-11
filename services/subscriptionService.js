@@ -31,40 +31,39 @@ export const refreshFeatureCostCache = async () => {
 refreshFeatureCostCache();
 
 export const getToolCost = (toolName, body = {}) => {
-    // Safe fallback if local cache is empty
-    let featureCosts = Object.keys(featureCostCache).length > 2 ? featureCostCache : {
+    // Merge hardcoded defaults with DB costs to ensure new features work
+    const defaults = {
         chat: 2, web_search: 60, deep_search: 85, agent_chat: 60, realtime_chat: 60,
         knowledge_base: 3, generate_image: 66, generate_image_hd: 100, generate_image_ultra: 135,
         edit_image: 66, video_multipliers: { "veo-3.1-fast-generate-001": { "4k": 585, "default": 250 }, "veo-3.1-generate-001": { "4k": 666, "default": 333 } },
-        code_writer: 3, convert_audio: 90, document_convert: 3, legal_toolkit: 250
+        code_writer: 3, convert_audio: 90, document_convert: 3, legal_toolkit: 250, aicashflow_tab: 5
     };
 
+    const featureCosts = { ...defaults, ...featureCostCache };
+
     if (toolName === 'chat') {
-        // Base chat cost handles standard input. Magic modes added to tools array handle their own costs.
-        return featureCosts.chat !== undefined ? featureCosts.chat : 2; 
+        return featureCosts.chat; 
     }
     
-    // Normalize mode/tool names for consistent lookup (e.g. DEEP_SEARCH -> deep_search)
     const normalizedTool = typeof toolName === 'string' ? toolName.toLowerCase() : toolName;
     if (normalizedTool === 'deep_search' || normalizedTool === 'web_search' || normalizedTool === 'code_writer') {
-        return featureCosts[normalizedTool] || 0;
+        return featureCosts[normalizedTool] || defaults[normalizedTool] || 0;
     }
     if (normalizedTool === 'convert_document' || normalizedTool === 'document_convert') {
-        return featureCosts.document_convert || 0;
+        return featureCosts.document_convert || defaults.document_convert || 0;
     }
     
     if (toolName === 'generate_video') {
         const duration = body?.duration || 5;
         const modelId = body?.modelId || 'veo-3.1-fast-generate-001';
         const resolution = body?.resolution || '1080p';
-        const videoMults = featureCosts.video_multipliers || {};
+        const videoMults = featureCosts.video_multipliers || defaults.video_multipliers;
         const modelMult = videoMults[modelId] || videoMults['veo-3.1-fast-generate-001'] || { "4k": 585, "default": 250 };
         const multiplier = resolution === '4k' ? (modelMult['4k'] || 585) : (modelMult['default'] || 250);
         return multiplier * duration;
     }
     
-    // Default fallback to direct key matching
-    return featureCosts[toolName] !== undefined ? featureCosts[toolName] : 0;
+    return featureCosts[toolName] !== undefined ? featureCosts[toolName] : (defaults[toolName] || 0);
 };
 
 const getToolLabel = (toolName) => {
@@ -83,6 +82,7 @@ const getToolLabel = (toolName) => {
         case 'code_writer': return 'AISA Code Writer';
         case 'convert_document': return 'AISA Document Analysis';
         case 'legal_toolkit': return 'AISA AI Legal';
+        case 'aicashflow_tab': return 'AISA CashFlow Explorer (Tab Access)';
         default: return 'AISA Service';
     }
 };
@@ -188,6 +188,7 @@ export const subscriptionService = {
 
         // 📝 Log to Database
         try {
+            console.log(`[CreditSystem] Deducting ${creditMeta.cost} for ${creditMeta.action} from user ${user._id}`);
             await CreditLog.create({
                 userId: user._id,
                 action: creditMeta.action || 'feature_usage',
@@ -195,6 +196,7 @@ export const subscriptionService = {
                 credits: -creditMeta.cost,
                 balanceAfter: user.credits
             });
+            console.log(`[CreditSystem] Log created successfully. New balance: ${user.credits}`);
         } catch (logErr) {
             console.error('CreditLog save failed in deductCreditsFromMeta:', logErr.message);
         }

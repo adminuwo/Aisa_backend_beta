@@ -91,9 +91,9 @@ export const uploadDocument = async (req, res) => {
             });
         }
 
-        let category = req.body.category || 'LEGAL';
+        let category = req.body.category || 'GENERAL';
         category = category.toUpperCase();
-        if (!['LEGAL', 'GENERAL'].includes(category)) category = 'LEGAL';
+        if (!['LEGAL', 'GENERAL', 'FINANCE'].includes(category)) category = 'GENERAL';
 
         // 3. Always Store Metadata (for listing)
         try {
@@ -330,7 +330,7 @@ export const uploadUrl = async (req, res) => {
         let { url, category = 'LEGAL', depth = 2, maxPages = 20, frequency = 'daily' } = req.body;
         
         category = category.toUpperCase();
-        if (!['LEGAL', 'GENERAL'].includes(category)) category = 'LEGAL';
+        if (!['LEGAL', 'GENERAL', 'FINANCE'].includes(category)) category = 'GENERAL';
 
         if (!url) {
             return res.status(400).json({ success: false, message: 'URL is required' });

@@ -47,7 +47,7 @@ export const processScheduledUpdate = async (source) => {
         await source.save();
 
         const result = await ingestionService.processUrlIngestion(source.url, source._id, {
-            category: 'Web-Auto',
+            category: source.category || 'GENERAL',
             maxDepth: source.crawl_depth || 2,
             maxPages: source.max_pages || 20
         });

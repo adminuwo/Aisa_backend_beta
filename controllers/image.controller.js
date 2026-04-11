@@ -246,8 +246,8 @@ IMPORTANT: DO NOT just return the original image unchanged. You MUST apply the t
                 folder: 'generated_images',
                 filename: gcsFilename(`aisa_${originalImage ? 'edit' : 'gen'}`),
                 mimeType: 'image/png',
-                isPublic: false,
-                useSignedUrl: true,
+                isPublic: true,
+                useSignedUrl: false,
             });
 
             if (gcsResult?.publicUrl) {
