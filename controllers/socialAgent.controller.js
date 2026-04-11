@@ -475,22 +475,34 @@ export const generateOneOffAsset = async (req, res) => {
       return res.status(400).json({ success: false, error: "workspaceId and prompt are required" });
     }
 
-    console.log('\n┌─────────────────────────────────────────────────────┐');
-    console.log('│  🚀 POST /assets/generate (Magic Create)            │');
-    console.log('└─────────────────────────────────────────────────────┘');
-    console.log(`  🏢 Workspace     : ${workspaceId}`);
-    console.log(`  💡 Prompt        : ${prompt}`);
+    logger.info(`[SocialAgent] Generating one-off image asset for workspace ${workspaceId}: ${prompt}`);
 
-    // Call the newly implemented Branded Magic Create Pipeline
-    const asset = await generationService.generateOneOffVisualPost(workspaceId, prompt, 'imagen-3.0-generate-001');
+    let buffer;
+    if (provider === 'openai') {
+      buffer = await openaiService.generateImageDalle(prompt);
+    } else {
+      buffer = await vertexService.generateImageImagen(prompt);
+    }
+
+    // Upload to GCS — Organized path: brands/{workspaceId}/generated/
+    const folder = `brands/${workspaceId}/generated`;
+    const fileName = `manual_${Date.now()}.png`;
+    const uploadResult = await socialAgentService.uploadBufferToGCS(buffer, fileName, 'image/png', folder);
+    console.log(`[OneOff Asset] Saved to: ${folder}/`);
+
+    const asset = new GeneratedAsset({
+      workspaceId,
+      assetType: 'image',
+      gcsUrl: uploadResult.url,
+      mimeType: 'image/png',
+      metadata: { prompt, generatedAt: new Date() }
+    });
+    await asset.save();
 
     // Return a signed URL so it works in the UI even if the bucket is private
     const assetObj = asset.toObject();
-    if (assetObj.gcsUrl) {
-      assetObj.gcsUrl = await socialAgentService.generateSignedUrl(asset.gcsUrl);
-    }
+    assetObj.gcsUrl = await socialAgentService.generateSignedUrl(asset.gcsUrl);
 
-    console.log(`  📨 Responding 200 with Asset: ${assetObj._id}\n`);
     res.json({ success: true, asset: assetObj });
   } catch (error) {
     logger.error(`[SocialAgent] generateOneOffAsset failed: ${error.message}`);
