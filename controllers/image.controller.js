@@ -390,3 +390,30 @@ export const editImage = async (req, res, next) => {
         res.status(500).json({ success: false, message: `Image editing failed: ${error.message}` });
     }
 };
+// -------------------------------------------------------------------
+// @route  GET /api/image/proxy?url=...
+// -------------------------------------------------------------------
+export const proxyImage = async (req, res) => {
+    const { url } = req.query;
+    if (!url) {
+        return res.status(400).send('URL is required');
+    }
+
+    try {
+        const response = await axios.get(url, {
+            responseType: 'stream',
+            timeout: 10000,
+            headers: {
+                'User-Agent': 'AISA-Backend-Proxy'
+            }
+        });
+
+        res.setHeader('Content-Type', response.headers['content-type'] || 'image/png');
+        res.setHeader('Access-Control-Allow-Origin', '*'); // Ensure CORS is allowed for this proxy
+        
+        response.data.pipe(res);
+    } catch (err) {
+        console.error(`[Image Proxy Error]: ${err.message}`);
+        res.status(500).send('Failed to proxy image');
+    }
+};
