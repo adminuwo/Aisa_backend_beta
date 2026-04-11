@@ -122,53 +122,68 @@ export const getGrahamAnalysis = async (req, res) => {
         if (!symbol) return res.status(400).json({ error: 'Symbol is required' });
 
         const stockName = name || symbol.split('.')[0];
-        // Improved query to include the stock name for better RAG retrieval
-        const query = `Benjamin Graham value investing principles applied to ${stockName}: margin of safety, intrinsic value, EPS, P/E ratio, defensive investing, and excerpts from The Intelligent Investor.`;
+        
+        // Stock-specific + principle-focused query for better RAG retrieval
+        const query = `value investing margin of safety intrinsic value defensive investor enterprising investor Benjamin Graham Intelligent Investor ${stockName} stock analysis`;
 
         // 1. Retrieve relevant passages from "The Intelligent Investor" via RAG
-        // Changed category to 'FINANCE' as it's more appropriate for an investment book
-        logger.info(`[Graham] Retrieving context from RAG for ${symbol}...`);
-        const ragResult = await retrieveContextFromRag(query, 6, 'FINANCE');
+        logger.info(`[Graham] Retrieving context from RAG for ${symbol} with query: "${query}"`);
+        const ragResult = await retrieveContextFromRag(query, 8, 'FINANCE');
         const bookContext = ragResult?.text || '';
+        const ragUsed = !!(ragResult && bookContext.length > 50);
+        console.log(`[Graham DEBUG] RAG used: ${ragUsed} | Sources: ${ragResult?.sources?.length || 0} | Context length: ${bookContext.length}`);
 
         // 2. Get current advisory data for indicators
         const advisory = await stockService.getAdvisory(symbol);
 
         // 3. Build the Graham analysis prompt
+        const bookSection = ragUsed 
+            ? `Relevant excerpts from "The Intelligent Investor" (your actual teachings):\n${bookContext}`
+            : `Apply your core principles from memory: margin of safety, intrinsic value, Mr. Market metaphor, defensive vs enterprising investor, and never speculate.`;
+
         const prompt = `
 You are Benjamin Graham, the father of value investing, author of "The Intelligent Investor".
 Analyze the stock ${stockName} (${symbol}) from your core investment philosophy.
 
-Current Market Data:
+Current Market Data for ${stockName}:
+- Stock Symbol: ${symbol}
 - Current Price: ₹${price || 'Unknown'}
-- RSI: ${advisory.indicators.RSI}
-- MACD: ${advisory.indicators.MACD}
-- SMA20: ${advisory.indicators.SMA}
-- Ichimoku Trend: ${advisory.indicators.Ichimoku}
-- 61.8% Fibonacci Level: ₹${advisory.indicators.Fibonacci}
+- RSI: ${advisory?.indicators?.RSI || 'N/A'}
+- MACD: ${advisory?.indicators?.MACD || 'N/A'}
+- SMA20: ${advisory?.indicators?.SMA || 'N/A'}
+- Ichimoku Trend: ${advisory?.indicators?.Ichimoku || 'N/A'}
+- 61.8% Fibonacci Level: ₹${advisory?.indicators?.Fibonacci || 'N/A'}
 
-Relevant excerpts from "The Intelligent Investor" (your teachings):
-${bookContext || 'Apply your core principles: margin of safety, intrinsic value, and defensive investing.'}
+${bookSection}
 
-Based on your philosophy from "The Intelligent Investor", provide a structured analysis.
+Based on your philosophy from "The Intelligent Investor", provide a structured analysis SPECIFIC to ${stockName}.
+IMPORTANT: Your analysis must be relevant to ${stockName} stock (${symbol}), not generic.
 Return ONLY valid JSON with this EXACT structure:
 {
   "graham_verdict": "BUY" | "HOLD" | "AVOID",
-  "margin_of_safety": "Assessment of whether the current price offers a margin of safety",
-  "intrinsic_value_note": "Commentary on the estimated intrinsic value vs current price",
-  "defensive_investor": "Is this suitable for a defensive (passive) investor? Why?",
-  "enterprising_investor": "Is this suitable for an enterprising (active) investor? Why?",
-  "graham_number_note": "Commentary on price-to-earnings and price-to-book considerations",
-  "key_principle_applied": "Which specific principle from The Intelligent Investor is most relevant here?",
-  "graham_quote": "A relevant quote or paraphrase from your teachings that applies to this stock",
-  "final_advice": "Your final one-paragraph advice as Benjamin Graham"
+  "margin_of_safety": "Specific assessment for ${stockName}: whether the current price offers a margin of safety",
+  "intrinsic_value_note": "Commentary on ${stockName}'s estimated intrinsic value vs current price",
+  "defensive_investor": "Is ${stockName} suitable for a defensive (passive) investor? Give specific reasons.",
+  "enterprising_investor": "Is ${stockName} suitable for an enterprising (active) investor? Give specific reasons.",
+  "graham_number_note": "P/E and P/B considerations specifically for ${stockName}",
+  "key_principle_applied": "Which specific principle from The Intelligent Investor is most relevant for ${stockName}?",
+  "graham_quote": "A relevant quote or paraphrase from your teachings that applies to ${stockName}",
+  "final_advice": "Your final one-paragraph advice as Benjamin Graham specifically about ${stockName}"
 }
 `;
 
         logger.info(`[Graham] Generating Benjamin Graham analysis for ${symbol}...`);
         const aiResponse = await AskVertexRaw(prompt, { temperature: 0.4, maxOutputTokens: 2048 });
-        const cleanJson = aiResponse.replace(/```json\s*|\s*```/g, '').trim();
-        const grahamData = JSON.parse(cleanJson);
+        
+        let grahamData = {};
+        try {
+            const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
+            const cleanJson = jsonMatch ? jsonMatch[0] : aiResponse.replace(/```json\s*|\s*```/g, '').trim();
+            grahamData = JSON.parse(cleanJson);
+        } catch (parseErr) {
+            logger.error(`[Graham] JSON Parse Error. Raw: ${aiResponse.substring(0, 100)}...`);
+            throw new Error(`AI generated invalid format: ${parseErr.message}`);
+        }
 
         if (req.creditMeta) {
             await subscriptionService.deductCreditsFromMeta(req.creditMeta);
@@ -180,12 +195,12 @@ Return ONLY valid JSON with this EXACT structure:
                 symbol,
                 name: stockName,
                 source: 'The Intelligent Investor — Benjamin Graham',
-                rag_used: !!ragResult
+                rag_used: ragUsed
             }
         });
 
     } catch (error) {
-        logger.error(`[Graham] Analysis Error: ${error.message}`);
+        logger.error(`[Graham Analysis] CRITICAL FAILURE: ${error.stack || error.message}`);
         res.json({
             graham: {
                 graham_verdict: 'HOLD',
@@ -198,7 +213,8 @@ Return ONLY valid JSON with this EXACT structure:
                 graham_quote: '"The intelligent investor is a realist who sells to optimists and buys from pessimists."',
                 final_advice: 'Exercise patience, demand a margin of safety, and never speculate.',
                 source: 'The Intelligent Investor — Benjamin Graham',
-                rag_used: false
+                rag_used: false,
+                error_context: error.message
             }
         });
     }
@@ -215,44 +231,60 @@ export const getKiyosakiAnalysis = async (req, res) => {
         if (!symbol) return res.status(400).json({ error: 'Symbol is required' });
 
         const stockName = name || symbol.split('.')[0];
-        const query = `Robert Kiyosaki financial principles from Rich Dad Poor Dad: assets vs liabilities, cashflow, financial literacy, taking risks, and investment advice for building wealth applied to ${stockName}.`;
+        
+        // Stock-specific + principle-focused query for better RAG retrieval
+        const query = `cashflow assets liabilities financial education wealth building Rich Dad Poor Dad Robert Kiyosaki ${stockName} investment stock`;
 
-        logger.info(`[Kiyosaki] Retrieving context from RAG for ${symbol}...`);
-        const ragResult = await retrieveContextFromRag(query, 6, 'FINANCE');
+        logger.info(`[Kiyosaki] Retrieving context from RAG for ${symbol} with query: "${query}"`);
+        const ragResult = await retrieveContextFromRag(query, 8, 'FINANCE');
         const bookContext = ragResult?.text || '';
+        const ragUsed = !!(ragResult && bookContext.length > 50);
+        console.log(`[Kiyosaki DEBUG] RAG used: ${ragUsed} | Sources: ${ragResult?.sources?.length || 0} | Context Length: ${bookContext.length}`);
 
         const advisory = await stockService.getAdvisory(symbol);
 
+        const bookSection = ragUsed
+            ? `Relevant excerpts from "Rich Dad Poor Dad" (your actual teachings):\n${bookContext}`
+            : `Apply your core principles from memory: assets put money in your pocket, liabilities take money out. Focus on cashflow, financial education, and making money work for you.`;
+        
         const prompt = `
 You are Robert Kiyosaki, author of "Rich Dad Poor Dad".
 Analyze the stock ${stockName} (${symbol}) from your perspective on wealth building and cashflow.
 
-Current Market Data:
+Current Market Data for ${stockName}:
+- Stock Symbol: ${symbol}
 - Current Price: ₹${price || 'Unknown'}
-- RSI: ${advisory.indicators.RSI}
-- MACD: ${advisory.indicators.MACD}
-- Trend: ${advisory.indicators.Ichimoku}
+- RSI: ${advisory?.indicators?.RSI || 'N/A'}
+- MACD: ${advisory?.indicators?.MACD || 'N/A'}
+- Trend: ${advisory?.indicators?.Ichimoku || 'N/A'}
 
-Relevant excerpts from "Rich Dad Poor Dad" (your principles):
-${bookContext || 'Focus on assets that put money in your pocket, cashflow, and financial education.'}
+${bookSection}
 
-Return ONLY valid JSON with this EXACT structure:
+Return ONLY valid JSON SPECIFIC to ${stockName}. Do NOT be generic — analyze THIS specific company.
 {
   "kiyosaki_verdict": "BUY" | "HOLD" | "AVOID",
-  "cashflow_perspective": "How does this stock fit into a cashflow-focused portfolio?",
-  "asset_vs_liability": "Is this a true asset according to your definition?",
-  "financial_literacy_tip": "A tip for the investor to improve their financial IQ regarding this sector",
-  "risk_assessment": "How should an investor view the risk of this stock?",
-  "rich_dad_advice": "What would the 'Rich Dad' say about this specific opportunity?",
-  "kiyosaki_quote": "A relevant quote or principle from your teachings",
-  "final_summary": "Your final one-paragraph advice on whether this helps build true wealth"
+  "cashflow_perspective": "How does ${stockName} (${symbol}) fit into a cashflow-focused portfolio?",
+  "asset_vs_liability": "Is ${stockName} a true asset by your definition? Why?",
+  "financial_literacy_tip": "A specific tip for investing in ${stockName}'s sector to improve financial IQ",
+  "risk_assessment": "Specific risk assessment for ${stockName} as an investment",
+  "rich_dad_advice": "What would Rich Dad say about investing in ${stockName} right now?",
+  "kiyosaki_quote": "A relevant quote or principle from your teachings that applies to ${stockName}",
+  "final_summary": "Your final one-paragraph advice on whether ${stockName} helps build true wealth"
 }
 `;
 
         logger.info(`[Kiyosaki] Generating analysis for ${symbol}...`);
         const aiResponse = await AskVertexRaw(prompt, { temperature: 0.5, maxOutputTokens: 2048 });
-        const cleanJson = aiResponse.replace(/```json\s*|\s*```/g, '').trim();
-        const kiyosakiData = JSON.parse(cleanJson);
+        
+        let kiyosakiData = {};
+        try {
+            const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
+            const cleanJson = jsonMatch ? jsonMatch[0] : aiResponse.replace(/```json\s*|\s*```/g, '').trim();
+            kiyosakiData = JSON.parse(cleanJson);
+        } catch (parseErr) {
+            logger.error(`[Kiyosaki] JSON Parse Error. Raw: ${aiResponse.substring(0, 100)}...`);
+            throw new Error(`AI generated invalid format: ${parseErr.message}`);
+        }
 
         if (req.creditMeta) {
             await subscriptionService.deductCreditsFromMeta(req.creditMeta);
@@ -264,12 +296,12 @@ Return ONLY valid JSON with this EXACT structure:
                 symbol,
                 name: stockName,
                 source: 'Rich Dad Poor Dad — Robert Kiyosaki',
-                rag_used: !!ragResult
+                rag_used: ragUsed
             }
         });
 
     } catch (error) {
-        logger.error(`[Kiyosaki] Analysis Error: ${error.message}`);
+        logger.error(`[Kiyosaki Analysis] CRITICAL FAILURE: ${error.stack || error.message}`);
         res.json({
             kiyosaki: {
                 kiyosaki_verdict: 'HOLD',
@@ -281,7 +313,8 @@ Return ONLY valid JSON with this EXACT structure:
                 kiyosaki_quote: 'It’s not how much money you make. It’s how much money you keep.',
                 final_summary: 'Focus on financial education and building an asset column that generates enough income to cover your expenses.',
                 source: 'Rich Dad Poor Dad — Robert Kiyosaki',
-                rag_used: false
+                rag_used: false,
+                error_context: error.message
             }
         });
     }
