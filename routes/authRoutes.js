@@ -692,6 +692,7 @@ router.get("/apple", (req, res) => {
 });
 
 router.post("/apple/callback", async (req, res) => {
+  console.log(`[DEBUG Apple Callback Body]:`, JSON.stringify(req.body));
   const { code, id_token, user: userJson, state } = req.body;
 
   try {
