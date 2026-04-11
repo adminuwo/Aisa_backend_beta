@@ -483,11 +483,22 @@ export const generateVisualPostForEntry = async (workspaceId, entryId, jobId, mo
   const brandColors     = (brand.brandColors || []).slice(0, 3).join(', ') || 'brand palette';
   const tone            = brand.toneOfVoice || brand.structuredIdentity?.tone || 'professional';
   const platform        = entry.platform || 'Instagram';
-  const postType        = entry.postType || entry.format || 'image';
+  const rawPostType     = (entry.postType || entry.format || 'image').toLowerCase().trim();
   const title           = entry.title || entry.heading_hook || 'Post';
   const hook            = entry.hook || entry.captionShort || '';
   const phase           = entry.phase || 'Awareness';
   const targetEthnicity = brand.targetEthnicity || 'Global';
+
+  // Normalise any free-text calendar value to a valid GeneratedAsset enum
+  // CalendarEntries can have values like "Informative", "Promotional", "Educational", "Shorts", etc.
+  const normalizeAssetType = (raw) => {
+    if (raw.includes('carousel') || raw.includes('slide'))  return 'carousel';
+    if (raw.includes('reel'))                               return 'reel';
+    if (raw.includes('video') || raw.includes('short') || raw.includes('shorts')) return 'video';
+    // Everything else (image, informative, promotional, educational, awareness, etc.) → image
+    return 'image';
+  };
+  const postType = normalizeAssetType(rawPostType);
 
   console.log(`    ✅ Brand        : "${companyName}"`);
   console.log(`    ✅ Post title   : "${title}"`);
@@ -613,6 +624,128 @@ Output ONLY the raw Imagen prompt text, nothing else. No JSON, no explanation.`;
   console.log('═'.repeat(60) + '\n');
 
   logger.info(`[VisualPost] ✅ Pipeline complete in ${totalSec}s | AssetID=${asset._id} | Model=${selectedModel}`);
+  return asset;
+};
+
+/**
+ * AI ADS AGENT — BRANDED MAGIC CREATE PIPELINE (One-Off Asset)
+ * ─────────────────────────────────────────────────
+ * Step 1 │ GPT-4    → Brand-aware Imagen prompt engineering from user intent
+ * Step 2 │ Vertex AI Imagen 3/4 → High-quality visual render
+ * Step 3 │ GCS      → Secure cloud storage
+ * Step 4 │ MongoDB  → GeneratedAsset
+ */
+export const generateOneOffVisualPost = async (workspaceId, userPrompt, modelId = 'imagen-3.0-generate-001') => {
+  const pipelineStart = Date.now();
+
+  console.log('\n' + '═'.repeat(60));
+  console.log('✨  AI ADS AGENT — BRANDED MAGIC CREATE STARTED');
+  console.log('═'.repeat(60));
+  console.log(`  🏢 Workspace   : ${workspaceId}`);
+  console.log(`  💡 User Intent : "${userPrompt.substring(0, 50)}..."`);
+  console.log(`  🤖 Model       : ${modelId}`);
+  console.log('─'.repeat(60));
+
+  // ── LOAD: Brand Profile ────────────────────────
+  console.log('\n[Step 0/4] 📂 Loading Brand Profile...');
+  const dataLoadStart = Date.now();
+  const brand = await BrandProfile.findOne({ workspaceId });
+  
+  if (!brand) throw new Error('Brand not found');
+
+  const companyName     = brand.companyName || 'Brand';
+  const brandColors     = (brand.brandColors || []).slice(0, 3).join(', ') || 'brand palette';
+  const tone            = brand.toneOfVoice || brand.structuredIdentity?.tone || 'professional';
+  const targetEthnicity = brand.targetEthnicity || 'Global';
+
+  console.log(`    ✅ Brand        : "${companyName}"`);
+  console.log(`    ✅ Brand colors : ${brandColors}`);
+  console.log(`    ✅ Tone         : ${tone}`);
+  console.log(`    ⏱  Loaded in ${Date.now() - dataLoadStart}ms`);
+
+  // ── STEP 1: GPT-4 Prompt Engineering ────────────────────────────
+  console.log('\n[Step 1/4] 🧠 GPT-4 Prompt Engineering...');
+  const promptStart = Date.now();
+
+  const promptEngineeringRequest = `You are an expert AI Image Prompt Engineer for social media advertising.
+
+Generate a detailed, photorealistic Imagen 3 image generation prompt based on the user's intent, ensuring it perfectly matches their brand identity.
+
+USER INTENT: ${userPrompt}
+
+BRAND IDENTITY TO ENFORCE:
+BRAND NAME: ${companyName}
+BRAND TONE: ${tone}
+BRAND COLORS: ${brandColors}
+TARGET AUDIENCE: ${targetEthnicity}
+
+Requirements for the Imagen prompt:
+- Make it photorealistic, high-quality, studio-grade.
+- Naturally integrate the brand colors into the composition (lighting, background, accents, or subjects).
+- Ensure the mood matches the brand tone.
+- NO text or logos in the image (clean visual only).
+- Be extremely specific about subject, setting, lighting, and camera angle.
+
+Output ONLY the raw Imagen prompt text, nothing else. No JSON, no explanation.`;
+
+  console.log(`    📤 Sending context to GPT-4...`);
+
+  const imagenPrompt = await AskOpenAIRaw(promptEngineeringRequest, null, {
+    systemInstruction: 'You are an AI image prompt engineer. Output only the image generation prompt text.'
+  });
+
+  if (!imagenPrompt || imagenPrompt.trim().length < 20) {
+    throw new Error('GPT-4 returned an empty image prompt');
+  }
+
+  const trimmedPrompt = imagenPrompt.trim();
+  console.log(`    ✅ Prompt received in ${Date.now() - promptStart}ms`);
+  console.log(`    📝 Prompt preview: "${trimmedPrompt.substring(0, 120)}..."`);
+
+  // ── STEP 2: Vertex AI Imagen Generation ─────────────────────────
+  console.log(`\n[Step 2/4] 🖼  Vertex AI Imagen Generation...`);
+  const imagenStart = Date.now();
+  console.log(`    🤖 Calling model: ${modelId}`);
+
+  const imageUrl = await generateImageFromPrompt(trimmedPrompt, null, '1:1', modelId);
+
+  if (!imageUrl) {
+    throw new Error('Vertex AI Imagen returned no image URL');
+  }
+
+  console.log(`    ✅ Image rendered in ${Date.now() - imagenStart}ms`);
+  console.log(`    🔗 GCS URL: ${imageUrl.substring(0, 80)}...`);
+
+  // ── STEP 3: Save GeneratedAsset to DB ────────────────────────────
+  console.log('\n[Step 3/4] 💾 Saving GeneratedAsset to MongoDB...');
+  const assetStart = Date.now();
+  
+  const assetName = `magic_${Date.now()}.png`;
+  const asset = await GeneratedAsset.create({
+    workspaceId,
+    assetType: 'image',
+    assetSource: 'generated',
+    gcsUrl: imageUrl,
+    mimeType: 'image/png',
+    metadata: {
+      prompt: trimmedPrompt,
+      originalIntent: userPrompt,
+      originalName: assetName,
+      generatedAt: new Date(),
+      modelUsed: modelId,
+    }
+  });
+
+  console.log(`    ✅ GeneratedAsset saved: ${asset._id}`);
+  console.log(`    ⏱  Saved in ${Date.now() - assetStart}ms`);
+
+  const totalMs = Date.now() - pipelineStart;
+  console.log('\n' + '═'.repeat(60));
+  console.log('✅  AI ADS AGENT — MAGIC CREATE COMPLETE');
+  console.log('═'.repeat(60));
+  console.log(`  ⏱  Total time   : ${(totalMs / 1000).toFixed(1)}s`);
+  console.log('═'.repeat(60) + '\n');
+
   return asset;
 };
 
