@@ -109,7 +109,8 @@ export const uploadToGCS = async (fileBuffer, options = {}) => {
     if (useSignedUrl) {
         resultUrl = await getSignedUrl(gcsPath);
     } else {
-        resultUrl = `https://storage.googleapis.com/${BUCKET_NAME}/${gcsPath}`;
+        const baseUrl = process.env.AISA_BACKEND_URL || 'http://localhost:8080';
+        resultUrl = `${baseUrl}/api/storage/view?path=${encodeURIComponent(gcsPath)}`;
     }
 
     logger.info(`[GCS] Upload success → ${resultUrl}`);

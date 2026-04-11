@@ -452,7 +452,7 @@ export const askVertex = async (prompt, context = null, options = {}) => {
         if (typeof response.text === 'function') {
             text = response.text();
         } else if (response.candidates && response.candidates.length > 0) {
-            text = response.candidates[0].content.parts[0].text;
+            text = response.candidates[0]?.content?.parts?.[0]?.text || "No response generated.";
         } else {
             logger.warn(`[VERTEX] Unexpected response format: ${JSON.stringify(response)}`);
             text = "No response generated.";

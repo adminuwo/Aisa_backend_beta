@@ -152,7 +152,13 @@ export const classifyIntent = async (message, attachments = [], conversationSumm
             }
         );
 
-        const rawContent = response.data.choices[0].message.content;
+        const choices = response.data?.choices;
+        if (!choices || choices.length === 0 || !choices[0]?.message?.content) {
+            logger.error('[IntentClassifier] OpenAI returned empty choices');
+            return buildFallbackResult(message, attachments);
+        }
+
+        const rawContent = choices[0].message.content;
         let result;
 
         try {
