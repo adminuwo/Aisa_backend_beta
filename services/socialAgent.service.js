@@ -1,4 +1,5 @@
 import { Storage } from '@google-cloud/storage';
+import { GoogleAuth, Impersonated } from 'google-auth-library';
 import * as xlsx from 'xlsx';
 
 import officeparser from 'officeparser';
@@ -151,6 +152,42 @@ export const getOrInitPlanUsage = async (workspaceId, planType) => {
   return usage;
 };
 
+let impersonatedStorageClient = null;
+
+const getImpersonatedStorage = async () => {
+  if (impersonatedStorageClient) return impersonatedStorageClient;
+
+  const targetPrincipal = process.env.VIDEO_SERVICE_ACCOUNT;
+  if (!targetPrincipal) return storage;
+
+  try {
+    const auth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/cloud-platform'] });
+    const sourceClient = await auth.getClient();
+
+    const impersonatedClient = new Impersonated({
+      sourceClient,
+      targetPrincipal,
+      lifetime: 3600,
+      delegates: [],
+      targetScopes: ['https://www.googleapis.com/auth/cloud-platform']
+    });
+
+    // explicitly fetch token to confirm impersonation works
+    await impersonatedClient.getAccessToken();
+
+    impersonatedStorageClient = new Storage({
+      authClient: impersonatedClient,
+      projectId: process.env.GCP_PROJECT_ID
+    });
+    
+    console.log(`[GCS] Successfully initialized impersonated storage client for ${targetPrincipal}`);
+    return impersonatedStorageClient;
+  } catch (error) {
+    console.error(`[GCS] Failed to initialize impersonated storage: ${error.message}`);
+    return storage; // Fall back to default ADC
+  }
+};
+
 /**
  * Generate a signed URL for a file in GCS
  */
@@ -160,23 +197,28 @@ export const generateSignedUrl = async (gcsUrl) => {
 
     const BASE_URL = process.env.BACKEND_PUBLIC_URL || `http://localhost:${process.env.PORT || 8080}`;
 
-    // Check if we can sign (signing requires a service account JSON with client_email)
-    const canSign = storage.authClient && storage.authClient.emailProvider && storage.authClient.emailProvider.email;
+    const rawParts = gcsUrl.split('storage.googleapis.com/')[1];
+    const bucketInUrl = rawParts.split('/')[0];
+    const fileName = rawParts.split('/').slice(1).join('/');
+
+    // Use impersonated storage if available (for signed URLs under ADC)
+    const activeStorage = await getImpersonatedStorage();
+
+    // Check if client can literally sign (ADC alone cannot, must have impersonated client or explicit JSON key)
+    const canSign = activeStorage.authClient && (
+       activeStorage.authClient instanceof Impersonated || 
+       (activeStorage.authClient.emailProvider && activeStorage.authClient.emailProvider.email)
+    );
+
     if (!canSign) {
-       // Only log once to avoid spamming
        if (!global.signingWarningLogged) {
-         console.warn("[GCS] Signing not possible without client_email. Falling back to internal proxy.");
+         console.warn("[GCS] Signing not possible without impersonated client or client_email. Falling back to internal proxy.");
          global.signingWarningLogged = true;
        }
        return `${BASE_URL}/api/media/proxy?url=${encodeURIComponent(gcsUrl)}`;
     }
 
-    // Pattern: https://storage.googleapis.com/bucket-name/folder/file
-    const rawParts = gcsUrl.split('storage.googleapis.com/')[1];
-    const bucketInUrl = rawParts.split('/')[0];
-    const fileName = rawParts.split('/').slice(1).join('/');
-
-    const file = storage.bucket(bucketInUrl).file(fileName);
+    const file = activeStorage.bucket(bucketInUrl).file(fileName);
 
     const [url] = await file.getSignedUrl({
       version: 'v4',
@@ -187,11 +229,10 @@ export const generateSignedUrl = async (gcsUrl) => {
     return url;
   } catch (error) {
     const BASE_URL = process.env.BACKEND_PUBLIC_URL || `http://localhost:${process.env.PORT || 8080}`;
-    // Suppress specific auth errors to avoid dashboard spam
-    if (error.message?.includes('client_email')) {
-       return `${BASE_URL}/api/media/proxy?url=${encodeURIComponent(gcsUrl)}`;
+    if (!global.signingErrorLogged) {
+       console.error("[GCS] Failed to generate signed URL. Falling back to proxy. Error:", error.message);
+       global.signingErrorLogged = true;
     }
-    console.error("[GCS] Failed to generate signed URL:", error);
     return `${BASE_URL}/api/media/proxy?url=${encodeURIComponent(gcsUrl)}`; // Fallback
   }
 };
