@@ -15,6 +15,7 @@ import Reminder from "../models/Reminder.js";
 import { requiresWebSearch, extractSearchQuery, processSearchResults, getWebSearchSystemInstruction, getCachedSearch, setCachedSearch } from "../utils/webSearch.js";
 import { performWebSearch } from "../services/searchService.js";
 import { convertFile } from "../utils/fileConversion.js";
+import officeParser from 'officeparser';
 import { generateVideoFromPrompt } from "../controllers/videoController.js";
 import { generateImageFromPrompt } from "../controllers/image.controller.js";
 import { generateFollowUpPrompts } from "../utils/imagePromptController.js";
@@ -77,12 +78,69 @@ router.post("/", optionalVerifyToken, identifyGuest, async (req, res) => {
       }
     }
 
-    // 2. UNIFIED AI SERVICE CALL
-    const chatResponse = await aiService.chat(content, null, {
+    // 2. PRE-PROCESSING: Extract text from DOCX files (Gemini/Vertex AI does not support .docx natively)
+    let activeDocContent = null;
+    let filteredDocuments = document;
+    
+    if (document && Array.isArray(document) && document.length > 0) {
+      const docTexts = [];
+      const validDocs = [];
+      
+      for (const doc of document) {
+        const isWord = doc.mimeType?.includes('word') || doc.name?.match(/\.(docx|doc)$/i);
+        const isRtf = doc.mimeType?.includes('rtf') || doc.name?.match(/\.rtf$/i);
+        
+        if ((isWord || isRtf) && doc.base64Data) {
+          try {
+            const buffer = Buffer.from(doc.base64Data, 'base64');
+            let extractedText = "";
+            
+            if (isWord) {
+              const parser = (officeParser && officeParser.parsePromise) ? officeParser : (officeParser?.default || officeParser);
+              try {
+                if (parser && typeof parser.parsePromise === 'function') {
+                  extractedText = await parser.parsePromise(buffer);
+                } else {
+                  throw new Error("officeParser not properly loaded");
+                }
+              } catch (officeErr) {
+                console.warn("[Mammoth Fallback] officeparser failed or not loaded:", officeErr.message);
+                const result = await mammoth.extractRawText({ buffer });
+                extractedText = result.value;
+              }
+            } else if (isRtf) {
+               // Basic RTF to Text Regex extraction
+               const rtfContent = buffer.toString('utf-8');
+               extractedText = rtfContent
+                 .replace(/\\([a-z]{1,32})(-?\d+)? ?/g, '') // Strip RTF keywords
+                 .replace(/\{[^}]+\}/g, '') // Strip RTF groups
+                 .replace(/\r?\n/g, ' ') // Flatten newlines
+                 .trim();
+            }
+            
+            if (extractedText) {
+              docTexts.push(`[${isRtf ? 'RTF' : 'Word'} Document Content: ${doc.name || 'Untitled'}]\n${extractedText}`);
+            }
+          } catch (mErr) {
+            console.error("[Document Extraction Error]", mErr);
+          }
+        } else {
+          validDocs.push(doc);
+        }
+      }
+      
+      if (docTexts.length > 0) {
+        activeDocContent = docTexts.join('\n\n---\n\n');
+      }
+      filteredDocuments = validDocs;
+    }
+
+    // 3. UNIFIED AI SERVICE CALL
+    const chatResponse = await aiService.chat(content, activeDocContent, {
       systemInstruction,
       mode,
       images: image,
-      documents: document,
+      documents: filteredDocuments,
       userName: req.user?.name,
       language,
       conversationId: sessionId,
@@ -146,15 +204,28 @@ router.post("/", optionalVerifyToken, identifyGuest, async (req, res) => {
           finalResponse.reply = reply;
         }
       } else if (data.action === 'file_conversion' && (image || document)) {
-        const docToConvert = (Array.isArray(document) ? document[0] : document) || (Array.isArray(image) ? image[0] : image);
-        const conversionResult = await convertFile(docToConvert, data.target_format);
-        if (conversionResult && conversionResult.success) {
-          finalResponse.conversion = {
-            file: conversionResult.file,
-            fileName: conversionResult.fileName,
-            mimeType: conversionResult.mimeType
-          };
-          finalResponse.reply = conversionResult.message || reply;
+        try {
+          const docToConvert = (Array.isArray(document) ? document[0] : document) || (Array.isArray(image) ? image[0] : image);
+          
+          if (docToConvert && docToConvert.base64Data) {
+            const buffer = Buffer.from(docToConvert.base64Data, 'base64');
+            const sourceFormat = data.source_format || (docToConvert.mimeType?.includes('pdf') ? 'pdf' : 'docx');
+            const targetFormat = data.target_format || (sourceFormat === 'pdf' ? 'docx' : 'pdf');
+            
+            const convertedBuffer = await convertFile(buffer, sourceFormat, targetFormat);
+            
+            if (convertedBuffer) {
+              finalResponse.conversion = {
+                file: convertedBuffer.toString('base64'),
+                fileName: `aisa_converted_${Date.now()}.${targetFormat}`,
+                mimeType: targetFormat === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+              };
+              finalResponse.reply = `I have successfully converted **${docToConvert.name || 'your file'}** to **${targetFormat.toUpperCase()}** format. 📄 You can download it using the icon above.`;
+            }
+          }
+        } catch (convErr) {
+          console.error("[FILE CONVERSION ERROR]", convErr);
+          finalResponse.reply = reply + `\n\n*(Error: Conversion failed - ${convErr.message})*`;
         }
       }
     } catch (e) {

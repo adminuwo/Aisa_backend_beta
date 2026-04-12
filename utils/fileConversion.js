@@ -1,6 +1,7 @@
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { Document, Packer, Paragraph, TextRun } from 'docx';
 import mammoth from 'mammoth';
+import officeParser from 'officeparser';
 import pdfParse from 'pdf-parse/lib/pdf-parse.js';
 import htmlToDocx from 'html-to-docx';
 import { genAIInstance, modelName as primaryModelName } from '../config/vertex.js';
@@ -169,9 +170,45 @@ function wrapText(text, width, font, fontSize) {
  */
 async function convertDocxToPdf(docxBuffer) {
     try {
-        // Extract text from DOCX
-        const result = await mammoth.extractRawText({ buffer: docxBuffer });
-        let text = result.value;
+        if (!docxBuffer || docxBuffer.length === 0) {
+            throw new Error("Empty document buffer received.");
+        }
+
+        // Diagnostic: Check for PK zip header (DOCX is a zip)
+        if (docxBuffer[0] !== 0x50 || docxBuffer[1] !== 0x4B) {
+             const header = docxBuffer.slice(0, 8).toString('hex');
+             console.error(`[DOCX-TO-PDF] Invalid Magic Bytes: ${header}`);
+             throw new Error("The file is not a valid Word document (Invalid ZIP header).");
+        }
+
+        // Extract text from DOCX - Use officeParser for better compatibility
+        let text = "";
+        
+        try {
+            // Attempt 1: officeparser
+            const parser = (officeParser && officeParser.parsePromise) ? officeParser : (officeParser?.default || officeParser);
+            if (parser && typeof parser.parsePromise === 'function') {
+                text = await parser.parsePromise(docxBuffer);
+            }
+        } catch (parserErr) {
+            console.warn('[DOCX-TO-PDF] officeParser failed, trying mammoth...');
+        }
+
+        if (!text || text.trim().length === 0) {
+            // Attempt 2: mammoth
+            try {
+                const result = await mammoth.extractRawText({ buffer: docxBuffer });
+                text = result.value;
+            } catch (mErr) {
+                console.warn('[DOCX-TO-PDF] mammoth failed as well.');
+            }
+        }
+
+        if (!text || text.trim().length === 0) {
+             // Attempt 3: If still no text, the file might be an image-only DOCX.
+             // But for now, we'll try to report a more accurate error.
+             throw new Error("No text content could be extracted from the document. This usually happens if the file contains only images or was created in a non-standard way.");
+        }
 
         // Clean text: remove or replace problematic Unicode characters
         // Keep only ASCII-safe characters and common Unicode ranges
@@ -272,13 +309,71 @@ export async function convertFile(fileBuffer, sourceFormat, targetFormat) {
     }
 
     // Perform conversion
-    if (sourceFormat.toLowerCase() === 'pdf' && targetFormat.toLowerCase() === 'docx') {
+    if (sourceFormat.toLowerCase() === 'pdf' && (targetFormat.toLowerCase() === 'docx' || targetFormat.toLowerCase() === 'doc')) {
         return await convertPdfToDocx(fileBuffer);
-    } else if (sourceFormat.toLowerCase() === 'docx' && targetFormat.toLowerCase() === 'pdf') {
+    } else if ((sourceFormat.toLowerCase() === 'docx' || sourceFormat.toLowerCase() === 'doc') && targetFormat.toLowerCase() === 'pdf') {
         return await convertDocxToPdf(fileBuffer);
+    } else if (sourceFormat.toLowerCase() === 'rtf' && targetFormat.toLowerCase() === 'pdf') {
+        return await convertRtfToPdf(fileBuffer);
+    } else {
+        throw new Error(`Unsupported conversion: ${sourceFormat} to ${targetFormat}`);
     }
-
-    throw new Error('Unsupported conversion type');
 }
 
+/**
+ * Convert RTF to PDF
+ */
+async function convertRtfToPdf(rtfBuffer) {
+    try {
+        const rtfContent = rtfBuffer.toString('utf-8');
+        const text = rtfContent
+            .replace(/\\([a-z]{1,32})(-?\d+)? ?/g, '')
+            .replace(/\{[^}]+\}/g, '')
+            .replace(/\r?\n/g, ' ')
+            .trim();
+
+        if (!text) {
+            throw new Error("No text content could be extracted from the RTF document.");
+        }
+
+        // Reuse PDF generation logic (we should really refactor this into a generatePdfFromText helper)
+        const pdfDoc = await PDFDocument.create();
+        const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+        let page = pdfDoc.addPage([595.276, 841.89]); // A4
+        const { width, height } = page.getSize();
+        
+        const fontSize = 11;
+        const margin = 50;
+        let y = height - margin;
+
+        const words = text.split(/\s+/);
+        let currentLine = "";
+
+        for (const word of words) {
+            const testLine = currentLine ? `${currentLine} ${word}` : word;
+            const testWidth = font.widthOfTextAtSize(testLine, fontSize);
+
+            if (testWidth > width - 2 * margin) {
+                page.drawText(currentLine, { x: margin, y: y, size: fontSize, font: font });
+                y -= fontSize * 1.2;
+                currentLine = word;
+
+                if (y < margin) {
+                    page = pdfDoc.addPage([595.276, 841.89]);
+                    y = height - margin;
+                }
+            } else {
+                currentLine = testLine;
+            }
+        }
+        if (currentLine) {
+            page.drawText(currentLine, { x: margin, y: y, size: fontSize, font: font });
+        }
+
+        return Buffer.from(await pdfDoc.save());
+    } catch (error) {
+        console.error("[RTF-TO-PDF] Error:", error);
+        throw new Error(`Failed to convert RTF to PDF: ${error.message}`);
+    }
+}
 export { convertPdfToDocx, convertDocxToPdf, detectFileType, validateConversionRequest };

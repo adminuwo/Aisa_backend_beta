@@ -501,8 +501,9 @@ ProjectRoot/
     } catch (error) {
         logger.error(`[AI-CHAT-ERROR] Stack Trace: ${error.stack}`);
         logger.error(`[AI-CHAT-ERROR] Message: ${error.message}`);
+        const debugInfo = (process.env.NODE_ENV === 'development' || true) ? `\n\n*(Technical Error: ${error.message})*` : '';
         return { 
-            text: "I'm having trouble connecting to my brain right now. Please try again later.", 
+            text: "I'm having trouble connecting to my brain right now. Please try again later." + debugInfo, 
             error: true, 
             details: error.message 
         };
