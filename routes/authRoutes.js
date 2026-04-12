@@ -711,14 +711,28 @@ router.post("/apple/callback", async (req, res) => {
     if (!keyId) throw new Error("APPLE_KEY_ID is missing from server env");
     if (!privateKey) throw new Error("APPLE_PRIVATE_KEY is missing from server env");
 
-    // Clean up private key (handle quotes and escaped newlines)
+    // Clean up private key (handle quotes, escaped newlines, or flat spaces from Cloud Run)
     privateKey = privateKey.trim();
     if (privateKey.startsWith('"') && privateKey.endsWith('"')) {
       privateKey = privateKey.substring(1, privateKey.length - 1);
     }
-    privateKey = privateKey.replace(/\\n/g, '\n');
+    
+    if (privateKey.includes('BEGIN PRIVATE KEY')) {
+      // Robust re-builder: strip EVERYTHING then chunk it out cleanly.
+      // This protects against bad copy/pasting in Google Cloud Run where space might be injected instead of newline.
+      let base64Data = privateKey
+        .replace(/-----BEGIN PRIVATE KEY-----/g, '')
+        .replace(/-----END PRIVATE KEY-----/g, '')
+        .replace(/\\n/g, '') // remove escaped newlines
+        .replace(/\s+/g, ''); // remove all actual spaces and newlines
 
-    if (!privateKey.includes('BEGIN PRIVATE KEY')) {
+      let formattedKey = '-----BEGIN PRIVATE KEY-----\n';
+      for (let i = 0; i < base64Data.length; i += 64) {
+          formattedKey += base64Data.substring(i, i + 64) + '\n';
+      }
+      formattedKey += '-----END PRIVATE KEY-----';
+      privateKey = formattedKey;
+    } else {
       console.error(`[DEBUG Apple] Invalid key prefix: ${privateKey.substring(0, 30)}...`);
       throw new Error("APPLE_PRIVATE_KEY format is invalid (missing BEGIN header)");
     }
