@@ -7,7 +7,7 @@ import htmlToDocx from 'html-to-docx';
 import { genAIInstance, modelName as primaryModelName } from '../config/vertex.js';
 
 /**
- * File Conversion Service for AISA
+ * File Conversion Service for AISA™
  * Handles PDF ↔ DOCX conversions
  */
 

@@ -300,7 +300,7 @@ export const Welcome_Email_Template = `
                     <li><strong>Try Before You Buy:</strong> Test drive AI agents with free trials to find the perfect match for your requirements.</li>
                     <li><strong>Customize Your Experience:</strong> Configure agents to work exactly how you want them, with personalized settings and integrations.</li>
                     <li><strong>Join the Community:</strong> Connect with other AI enthusiasts, share experiences, and stay updated on the latest AI innovations.</li>
-                    <li><strong>24/7 Support:</strong> Our dedicated support team is always here to help you get the most out of AISA.</li>
+                    <li><strong>24/7 Support:</strong> Our dedicated support team is always here to help you get the most out of AISA™.</li>
                 </ul>
             </div>
 
@@ -309,7 +309,7 @@ export const Welcome_Email_Template = `
             </div>
 
             <div class="support-section">
-                <strong>💡 Pro Tip:</strong> Try image generation and deep search features with AISA! 
+                <strong>💡 Pro Tip:</strong> Try image generation and deep search features with AISA™! 
                 Check out our trending section for the top-rated AI solutions loved by our community.
             </div>
 

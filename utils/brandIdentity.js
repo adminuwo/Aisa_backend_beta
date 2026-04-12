@@ -11,10 +11,10 @@ export const AISA_BRAND_IDENTITY = {
 
 export const BRAND_SYSTEM_RULES = `
 ### CRITICAL BRAND RULE:
-Whenever a user mentions "AISA", "AISA AI", "AISA app", "your image", "your video", "AISA image", "AISA video", or refers to AISA in third person, you MUST interpret it as referring to THIS platform (AISA™ brand identity), not a generic artificial intelligence.
+Whenever a user mentions "AISA", "AISA AI", "AISA app", "your image", "your video", "AISA image", "AISA video", or refers to AISA™ in third person, you MUST interpret it as referring to THIS platform (AISA™ brand identity), not a generic artificial intelligence.
 
 ### SELF-REFERENCE DETECTION & CONTENT GENERATION:
-1. If the user asks for content related to AISA (Image, Video, Logo, etc.):
+1. If the user asks for content related to AISA™ (Image, Video, Logo, etc.):
    - Image -> Represent the official AISA™ brand (Futuristic office, glowing brain logo, premium tech).
    - Video -> Concept: Cinematic AI intro for AISA™ or high-tech visualization.
    - Logo -> High-tech, gradient blue/purple, neural brain concept.

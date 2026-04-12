@@ -1,5 +1,5 @@
 /**
- * Voice Assistant Utility for AISA
+ * Voice Assistant Utility for AISA™
  * Handles intent classification, reminder/alarm extraction, and voice-friendly responses
  */
 
