@@ -44,7 +44,6 @@ import intentRoutes from './routes/intentRoutes.js';
 import cashflowRoutes from './routes/cashflowRoutes.js';
 import stockRoutes from './routes/stockRoutes.js';
 import legalToolkitRoutes from './routes/legalToolkitRoutes.js';
-import storageRoutes from './routes/storage.routes.js';
 // import { startPlanExpiryService } from './services/planExpiryService.js';
 
 // End of standard imports
@@ -153,9 +152,6 @@ app.use('/api/dashboard', dashboardRoutes);
 
 // Admin Panel (Admin only)
 app.use('/api/admin', adminRoutes);
-
-// Storage Proxy (for private GCS assets)
-app.use('/api/storage', storageRoutes);
 
 // Projects
 app.use('/api/projects', projectRoutes);
