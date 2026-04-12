@@ -711,6 +711,26 @@ router.post("/apple/callback", async (req, res) => {
     if (!keyId) throw new Error("APPLE_KEY_ID is missing from server env");
     if (!privateKey) throw new Error("APPLE_PRIVATE_KEY is missing from server env");
 
+    // Check if APPLE_PRIVATE_KEY is a file path (or we find the local file)
+    if (privateKey.endsWith('.p8') || privateKey.endsWith('.pem')) {
+      try {
+        const filePath = path.resolve(process.cwd(), privateKey);
+        privateKey = fs.readFileSync(filePath, 'utf8');
+        console.log(`[DEBUG Apple] Loaded private key from file: ${filePath}`);
+      } catch (err) {
+        throw new Error(`Failed to read key file at ${privateKey}: ${err.message}`);
+      }
+    } else {
+      // Look for a local AuthKey file automatically as fallback if it doesn't look like a key
+      if (!privateKey.includes('-----BEGIN')) {
+        const fallbackPath = path.resolve(process.cwd(), 'AuthKey_N9366H7UY2.p8');
+        if (fs.existsSync(fallbackPath)) {
+          privateKey = fs.readFileSync(fallbackPath, 'utf8');
+          console.log(`[DEBUG Apple] Loaded private key from fallback local file: ${fallbackPath}`);
+        }
+      }
+    }
+
     // Clean up private key (handle quotes, escaped newlines, or flat spaces from Cloud Run)
     privateKey = privateKey.trim();
     if (privateKey.startsWith('"') && privateKey.endsWith('"')) {
@@ -734,7 +754,7 @@ router.post("/apple/callback", async (req, res) => {
       privateKey = formattedKey;
     } else {
       console.error(`[DEBUG Apple] Invalid key prefix: ${privateKey.substring(0, 30)}...`);
-      throw new Error("APPLE_PRIVATE_KEY format is invalid (missing BEGIN header)");
+      throw new Error("APPLE_PRIVATE_KEY format is invalid (missing BEGIN header). Ensure the .p8 file exists or content is correct.");
     }
 
     let finalIdToken = bodyIdToken;
