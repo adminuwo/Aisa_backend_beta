@@ -243,6 +243,21 @@ export const TOOL_REGISTRY = {
         emoji: '📜',
         modeKey: 'LEGAL_TOOLKIT'
     },
+    legal_fir_generator: {
+        name: 'FIR Generator',
+        description: 'Generate formal court-ready First Information Reports (FIR)',
+        inputs: ['text'],
+        outputs: ['text'],
+        handler: 'legalToolkitRoutes',
+        endpoint: '/api/legal-toolkit/execute',
+        creditCost: 250,
+        isPremium: false,
+        requiresAssets: false,
+        dependencies: [],
+        isInternal: false,
+        emoji: '🛡️',
+        modeKey: 'LEGAL_TOOLKIT'
+    },
     legal_nda_generator: {
         name: 'NDA Generator',
         description: 'Generate a professional Non-Disclosure Agreement',

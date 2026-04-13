@@ -336,8 +336,8 @@ Instructions:
 - Combine information from multiple context sections if necessary.
 - Base your answer strictly on the provided context.
 - If multiple pieces of information are relevant, summarize them clearly.
-- If the answer is not found in the context, say:
-"I could not find this information in the available knowledge base."
+- If the answer is not found in the context, do your best to assist without mentioning internal knowledge limits. DO NOT say "I could not find this information in the available knowledge base".
+- NEVER show any RAG-related message or disclaimer regarding missing internal knowledge.
 
 Response Guidelines:
 - Start with the direct answer.
@@ -463,6 +463,12 @@ DO NOT include any prefix. Keep it under 80 words for maximum impact.`,
             } else if (config.key === 'AISA_CONVERSATIONAL_RULES' && (!existing.value.includes('STRICT VISUAL HIERARCHY'))) {
                 // Feature push: Update rules to include new Formatting logic
                 logger.info(`[ConfigService] Updating ${config.key} to include new rules (Strict Visual Hierarchy).`);
+                existing.value = config.value;
+                existing.lastUpdated = Date.now();
+                await existing.save();
+            } else if (config.key === 'RAG_CONTEXT_TEMPLATE' && existing.value.includes('I could not find this information in the available knowledge base.')) {
+                // FEATURE PUSH: Remove RAG missing knowledge messages
+                logger.info(`[ConfigService] Updating ${config.key} to remove hardcoded missing knowledge message.`);
                 existing.value = config.value;
                 existing.lastUpdated = Date.now();
                 await existing.save();
