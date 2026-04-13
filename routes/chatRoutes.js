@@ -246,10 +246,10 @@ router.post("/", optionalVerifyToken, identifyGuest, async (req, res) => {
     console.log(`[BACKEND-CHAT] Session found: ${!!session} | Generic Title: ${isGenericTitle} | Title: ${session?.title}`);
     const userId = req.user ? req.user.id : null;
 
-    if (!session && sessionId) {
+    if (!session) {
       const aiTitle = await aiService.generateConversationTitle(content);
       session = new ChatSession({
-        sessionId,
+        sessionId: sessionId || `temp_${Date.now()}`,
         userId: userId || null,
         guestId: req.guest?.guestId || null,
         projectId: req.body.projectId || null,

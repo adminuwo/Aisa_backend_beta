@@ -22,8 +22,17 @@ const upload = multer({
 
 router.post('/', verifyToken, upload.single('image'), creditMiddleware, async (req, res) => {
     try {
-        const { prompt } = req.body;
+        const { prompt, model } = req.body;
         const file = req.file;
+
+        // Whitelist of supported edit models
+        const ALLOWED_EDIT_MODELS = [
+            'gemini-3.1-flash-image-preview',
+            'gemini-3-pro-image-preview',
+            'gemini-2.5-flash-image'
+        ];
+        const selectedModel = ALLOWED_EDIT_MODELS.includes(model) ? model : 'gemini-3.1-flash-image-preview';
+        console.log(`[Magic Image Edit] Using model: ${selectedModel}`);
 
         if (!prompt) {
             return res.status(400).json({ success: false, message: 'Prompt is required' });
@@ -37,7 +46,7 @@ router.post('/', verifyToken, upload.single('image'), creditMiddleware, async (r
         const client = new GoogleGenAI({
             vertexai: true,
             project: process.env.GCP_PROJECT_ID,
-            location: 'us-central1', 
+            location: 'global', 
         });
 
         const imageBase64 = file.buffer.toString('base64');
@@ -59,7 +68,7 @@ ${finalContentPrompt}
 CRITICAL: DO NOT JUST MODIFY THE ORIGINAL IMAGE. Create a cinematic, 8k, photorealistic masterpiece that places the person from the reference into the requested scene. If they should be on a horse, they MUST be on a horse. If they should be in a forest, the background MUST be a majestic forest.`;
 
         const response = await client.models.generateContent({
-            model: 'gemini-2.5-flash-image',
+            model: selectedModel,
             contents: [
                 {
                     role: 'user',
@@ -84,32 +93,42 @@ CRITICAL: DO NOT JUST MODIFY THE ORIGINAL IMAGE. Create a cinematic, 8k, photore
         let modifiedImageUrl = null;
         let responseText = null;
 
+        let safetyMessage = null;
         const candidates = response.candidates || [];
-        if (candidates.length > 0 && candidates[0].content && candidates[0].content.parts) {
-            for (const part of candidates[0].content.parts) {
-                if (part.text) {
-                    console.log(`[Magic Image Edit] AI Says: ${part.text}`);
-                    responseText = part.text;
-                } else if (part.inlineData && part.inlineData.data) {
-                    const imageBytes = Buffer.from(part.inlineData.data, 'base64');
-                    const gcsResult = await uploadToGCS(imageBytes, {
-                        folder: 'generated_images',
-                        filename: gcsFilename('aisa_magic_edit'),
-                        mimeType: part.inlineData.mimeType || 'image/png',
-                        isPublic: false,
-                        useSignedUrl: true,
-                    });
+        if (candidates.length > 0) {
+            const firstCandidate = candidates[0];
+            if (firstCandidate.finishReason && firstCandidate.finishReason !== 'STOP') {
+                safetyMessage = firstCandidate.finishMessage || `Image blocked due to: ${firstCandidate.finishReason}`;
+            }
 
-                    if (gcsResult?.publicUrl) {
-                        modifiedImageUrl = gcsResult.publicUrl;
-                        console.log(`[IMAGE SUCCESS] ${modifiedImageUrl}`);
+            if (firstCandidate.content && firstCandidate.content.parts) {
+                for (const part of firstCandidate.content.parts) {
+                    if (part.text) {
+                        console.log(`[Magic Image Edit] AI Says: ${part.text}`);
+                        responseText = part.text;
+                    } else if (part.inlineData && part.inlineData.data) {
+                        const imageBytes = Buffer.from(part.inlineData.data, 'base64');
+                        const gcsResult = await uploadToGCS(imageBytes, {
+                            folder: 'generated_images',
+                            filename: gcsFilename('aisa_magic_edit'),
+                            mimeType: part.inlineData.mimeType || 'image/png',
+                            isPublic: false,
+                            useSignedUrl: true,
+                        });
+
+                        if (gcsResult?.publicUrl) {
+                            modifiedImageUrl = gcsResult.publicUrl;
+                            console.log(`[IMAGE SUCCESS] ${modifiedImageUrl}`);
+                        }
                     }
                 }
             }
         }
 
         if (!modifiedImageUrl) {
-            throw new Error("Failed to retrieve modified image URL from GenAI response.");
+            console.error("[Magic Image Edit] FULL RESPONSE DUMP:", JSON.stringify(response, null, 2));
+            const errorMessage = safetyMessage ? safetyMessage : (responseText ? `AI Response: ${responseText}` : "Failed to retrieve modified image URL from GenAI response.");
+            throw new Error(errorMessage);
         }
 
         // 💰 Deduct credits on successful output

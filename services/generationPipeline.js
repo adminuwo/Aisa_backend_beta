@@ -71,7 +71,7 @@ If the prompt contains a placeholder like __PRODUCT_NAME__, treat it as a generi
 
         logger.info(`[PromptEnhancer] Enhancing ${mediaType} prompt via LLM...`);
         const response = await client.models.generateContent({
-            model: 'gemini-1.5-flash',
+            model: 'gemini-2.5-flash',
             contents: [{ role: 'user', parts: [{ text: `Original Prompt: "${normalizedPrompt}"\n\nEnhance this.` }] }],
             config: {
                 systemInstruction: systemInstruction,

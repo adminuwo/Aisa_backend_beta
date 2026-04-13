@@ -327,9 +327,9 @@ export const AskVertexRaw = async (prompt, options = {}) => {
 
         if (typeof response.text === 'function') {
             return response.text();
-        } else if (response.candidates && response.candidates[0]?.content?.parts[0]?.text) {
+        } else if (response?.candidates?.[0]?.content?.parts?.[0]?.text) {
             return response.candidates[0].content.parts[0].text;
-        } else if (response.text && typeof response.text === 'string') {
+        } else if (response?.text && typeof response.text === 'string') {
             return response.text;
         }
 
