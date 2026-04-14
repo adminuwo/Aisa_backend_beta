@@ -19,6 +19,7 @@ import officeParser from 'officeparser';
 import { generateVideoFromPrompt } from "../controllers/videoController.js";
 import { generateImageFromPrompt } from "../controllers/image.controller.js";
 import { generateFollowUpPrompts } from "../utils/imagePromptController.js";
+import { executeImagePipeline } from "../services/generationPipeline.js";
 import { getMemoryContext, extractUserMemory, updateMemory } from "../utils/memoryService.js";
 import { subscriptionService, checkPremiumAccess } from '../services/subscriptionService.js';
 import { retrieveContextFromRag, detectRAGNeed } from "../services/vertex.service.js";
@@ -50,7 +51,7 @@ const checkGuestLimits = async (req, sessionId) => {
 
 // --- CORE CHAT ENDPOINT ---
 router.post("/", optionalVerifyToken, identifyGuest, async (req, res) => {
-  const { content, history, systemInstruction, image, video, document, language, model, mode, sessionId, userMsgId, aiMsgId } = req.body;
+  const { content, history, systemInstruction, image, video, document, language, model, mode, sessionId, userMsgId, aiMsgId, aspectRatio, modelId: reqModelId } = req.body;
 
   try {
     // 1. LIMIT & CREDIT CHECKS
@@ -175,26 +176,48 @@ router.post("/", optionalVerifyToken, identifyGuest, async (req, res) => {
       }
 
       if (data.action === 'generate_image' && data.prompt) {
-        const imageUrl = await generateImageFromPrompt(data.prompt);
-        if (imageUrl) {
-          finalResponse.imageUrl = imageUrl;
-          finalResponse.reply = reply;
+        try {
+            const pipelineResult = await executeImagePipeline(
+                data.prompt,
+                async (finalPrompt, activeModel) => {
+                    return await generateImageFromPrompt(finalPrompt, null, aspectRatio || '1:1', activeModel);
+                },
+                { modelId: reqModelId || 'gemini-3.1-flash-image-preview', enhance: true }
+            );
+            
+            if (pipelineResult.url) {
+                finalResponse.imageUrl = pipelineResult.url;
+                finalResponse.reply = reply;
 
-          // 🧠 Generate Smart Prompts for the Image
-          const followUpPrompts = await generateFollowUpPrompts(data.prompt, imageUrl).catch(() => []);
-          finalResponse.suggestions = followUpPrompts;
+                // 🧠 Generate Smart Prompts for the Image
+                const followUpPrompts = await generateFollowUpPrompts(data.prompt, pipelineResult.url).catch(() => []);
+                finalResponse.suggestions = followUpPrompts;
+            }
+        } catch (pipeErr) {
+            console.error("[MediaGen] generate_image pipeline error:", pipeErr);
         }
       } else if (data.action === 'modify_image' && data.prompt) {
         let sourceImage = (Array.isArray(image) && image.length > 0) ? image[0] : (image || null);
         if (sourceImage) {
-          const imageUrl = await generateImageFromPrompt(data.prompt, sourceImage);
-          if (imageUrl) {
-            finalResponse.imageUrl = imageUrl;
-            finalResponse.reply = reply;
+          try {
+            const pipelineResult = await executeImagePipeline(
+                data.prompt,
+                async (finalPrompt, activeModel) => {
+                    return await generateImageFromPrompt(finalPrompt, sourceImage, aspectRatio || '1:1', activeModel);
+                },
+                { modelId: reqModelId || 'gemini-3.1-flash-image-preview', enhance: true }
+            );
 
-            // 🧠 Generate Smart Prompts for the Edited Image
-            const followUpPrompts = await generateFollowUpPrompts(data.prompt, imageUrl).catch(() => []);
-            finalResponse.suggestions = followUpPrompts;
+            if (pipelineResult.url) {
+              finalResponse.imageUrl = pipelineResult.url;
+              finalResponse.reply = reply;
+
+              // 🧠 Generate Smart Prompts for the Edited Image
+              const followUpPrompts = await generateFollowUpPrompts(data.prompt, pipelineResult.url).catch(() => []);
+              finalResponse.suggestions = followUpPrompts;
+            }
+          } catch (pipeErr) {
+              console.error("[MediaGen] modify_image pipeline error:", pipeErr);
           }
         }
       } else if (data.action === 'generate_video' && data.prompt) {

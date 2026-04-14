@@ -27,16 +27,33 @@ const getGenAIClient = (location = 'global') => new GoogleGenAI({
 // Gemini SDK Streaming Generator
 // Uses generateContentStream + collects inlineData chunks
 // ------------------------------------------------------------------
-const generateWithGeminiSDK = async (prompt, modelId) => {
-    console.log(`[Gemini GenAI SDK] Generating with model: ${modelId}`);
+const generateWithGeminiSDK = async (prompt, modelId, aspectRatio = '1:1') => {
+    console.log(`[Gemini GenAI SDK] Generating with model: ${modelId} | Ratio: ${aspectRatio} | Prompt: "${prompt}"`);
     const client = getGenAIClient('global');
+
+    // Map frontend aspect ratios to Gemini-supported values
+    let geminiRatio = '1:1';
+    if (aspectRatio === '16:9') geminiRatio = '16:9';
+    else if (aspectRatio === '9:16') geminiRatio = '9:16';
+    else if (aspectRatio === '4:5') geminiRatio = '4:5';
+    else if (aspectRatio === '3:4') geminiRatio = '3:4';
+    else if (aspectRatio === '4:3') geminiRatio = '4:3';
+
+    console.log(`[Gemini GenAI SDK] Resolved aspect ratio: "${aspectRatio}" → "${geminiRatio}"`);
+
+    // Build config — always pass aspectRatio explicitly so API never defaults to a different ratio
+    const config = {
+        responseModalities: [Modality.TEXT, Modality.IMAGE],
+        imageConfig: {
+            personGeneration: 'ALLOW_ALL',
+            aspectRatio: geminiRatio,
+        }
+    };
 
     const response = await client.models.generateContentStream({
         model: modelId,
         contents: prompt,
-        config: {
-            responseModalities: [Modality.TEXT, Modality.IMAGE],
-        },
+        config
     });
 
     let base64Data = null;
@@ -52,7 +69,8 @@ const generateWithGeminiSDK = async (prompt, modelId) => {
             base64Data = Buffer.from(chunk.data).toString('base64');
             console.log(`[Gemini GenAI SDK] Received image chunk (${base64Data.length} base64 chars)`);
         }
-        // Also check inlineData format (some SDK versions)
+        
+        // Also check inlineData format (some SDK versions pack it this way)
         const parts = chunk.candidates?.[0]?.content?.parts || [];
         for (const part of parts) {
             if (part.inlineData?.data) {
@@ -88,17 +106,14 @@ export const generateImageFromPrompt = async (prompt, originalImage = null, aspe
             usedModel = 'gemini-3.1-flash-image-preview';
         }
 
-        // Add aspect ratio hint to prompt if needed (since Gemini handles it mostly via config or prompt)
-        const adjustedPrompt = aspectRatio !== '1:1' ? `${prompt}. Ensure the image aspect ratio is ${aspectRatio}.` : prompt;
-
         try {
-            const result = await generateWithGeminiSDK(adjustedPrompt, usedModel);
+            const result = await generateWithGeminiSDK(prompt, usedModel, aspectRatio);
             base64Data = result.base64Data;
             mimeType = result.mimeType;
         } catch (geminiErr) {
             console.warn(`[Gemini GenAI SDK] ${usedModel} failed: ${geminiErr.message} — falling back to gemini-2.5-flash-image`);
             usedModel = 'gemini-2.5-flash-image';
-            const fallbackResult = await generateWithGeminiSDK(adjustedPrompt, usedModel);
+            const fallbackResult = await generateWithGeminiSDK(prompt, usedModel, aspectRatio);
             base64Data = fallbackResult.base64Data;
             mimeType = fallbackResult.mimeType;
         }
