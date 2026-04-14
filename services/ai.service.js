@@ -126,7 +126,7 @@ export const chat = async (message, activeDocContent = null, options = {}) => {
         
         let toolRestrictions = "";
         if (isActuallyImageMode) {
-            toolRestrictions = "\n\n### MODE: IMAGE GENERATION ENABLED. You can generate images using JSON action strictly if explicitly asked.";
+            toolRestrictions = "\n\n### MODE: IMAGE GENERATION ENABLED. You can generate images using JSON action strictly if explicitly asked. CRITICAL: When creating the JSON action, your 'prompt' MUST preserve the exact main subject requested by the user. Do NOT change, replace, or creatively reimagine the core subject (e.g. if the user says 'panda' or misinterprets it as 'panada', use exactly what they intended or wrote). NEVER substitute the subject with a generic person or other unrelated concepts.";
         } else if (isActuallyVideoMode) {
             toolRestrictions = "\n\n### MODE: VIDEO GENERATION ENABLED. You can generate videos using JSON action strictly if explicitly asked.";
         } else if (isActuallySearchMode) {

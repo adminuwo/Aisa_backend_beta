@@ -63,26 +63,38 @@ DO NOT include any prefix like "Prompt:" or extra conversational text. Keep it u
 If the prompt contains a placeholder like __PRODUCT_NAME__, treat it as a generic named entity or product and do NOT replace it with branding, logos, or specific visual styles.`);
         } else {
             systemInstruction = getConfig('IMAGE_PROMPT_ENHANCER', `You are an expert image prompt engineer.
-Enhance the user prompt. Keep it punchy, short, and cost-effective for token usage, while maximizing visual impact.
-Focus ONLY on [Subject], [Core Style], and [Lighting].
-DO NOT include any prefix like "Prompt:". Stay under 30 words.
-If the prompt contains a placeholder like __PRODUCT_NAME__, treat it as a generic named entity and do NOT replace it with logos, brand visuals, or specific identifiable imagery.`);
+Your ONLY job is to add visual descriptors (style, lighting, quality) to the user's prompt.
+
+CRITICAL RULES — NEVER break these:
+1. NEVER change, replace, swap, or reinterpret the INTENDED main subject. If the user has an obvious typo (e.g. "panada" instead of "panda", "ctt" instead of "cat"), you MUST autocorrect it to the intended subject. Then, ensure the output contains that corrected subject. The intended subject is SACRED.
+2. NEVER invent a new animal, person, object, or scene that the user did not mention, except for the logical environment (e.g. bamboo forest for panda).
+3. ONLY add descriptors like: art style, lighting quality, camera angle, mood, rendering quality.
+4. Keep the output under 30 words.
+5. DO NOT include any prefix like "Prompt:" or "Enhanced:".
+6. If the prompt contains a placeholder like __PRODUCT_NAME__, treat it as a generic named entity — do NOT replace it with logos, brand visuals, or specific identifiable imagery.
+
+EXAMPLE:
+Input: "generate image of panda"
+Output: "A giant panda sitting in a bamboo forest, soft natural lighting, ultra-realistic, 8K, cinematic depth of field"
+
+Input: "a dog on a beach"
+Output: "A golden retriever dog playing on a sunny beach, golden hour lighting, shallow depth of field, photorealistic, 8K"`);
         }
 
         logger.info(`[PromptEnhancer] Enhancing ${mediaType} prompt via LLM...`);
         const response = await client.models.generateContent({
             model: 'gemini-2.5-flash',
-            contents: [{ role: 'user', parts: [{ text: `Original Prompt: "${normalizedPrompt}"\n\nEnhance this.` }] }],
+            contents: [{ role: 'user', parts: [{ text: `User Prompt: "${normalizedPrompt}"\n\nAdd visual quality descriptors. KEEP the exact subject. Return enhanced prompt only.` }] }],
             config: {
                 systemInstruction: systemInstruction,
-                temperature: 0.7,
+                temperature: 0.2,
                 maxOutputTokens: 200,
             }
         });
 
         let enhancedText = response.text || normalizedPrompt;
         // Clean up any weird prefixes the LLM might hallucinate
-        enhancedText = enhancedText.replace(/^(Here is the enhanced prompt:|Prompt:|\*\*Enhanced Prompt:\*\*|\[.*?\]\s*-?\s*)/gi, '').trim();
+        enhancedText = enhancedText.replace(/^(Here is the enhanced prompt:|Prompt:|Output:|Enhanced:|\*\*Enhanced Prompt:\*\*|\[.*?\]\s*-?\s*)/gi, '').trim();
 
         // Post-process: Restore the original word AISA from the placeholder
         if (hasAisa) {
