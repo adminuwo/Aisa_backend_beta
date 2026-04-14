@@ -6,6 +6,7 @@ import { getConfig } from '../services/configService.js';
 import { subscriptionService } from '../services/subscriptionService.js';
 import { selectImageModel } from '../services/modelSelector.js';
 import { executeImagePipeline } from '../services/generationPipeline.js';
+import axios from 'axios';
 
 // ------------------------------------------------------------------
 // Gemini image models — use @google/genai SDK with global endpoint
@@ -211,6 +212,7 @@ export const proxyImage = async (req, res) => {
     if (!url) {
         return res.status(400).send('URL is required');
     }
+    console.log(`[Image Proxy] Fetching:`, url);
 
     try {
         const response = await axios.get(url, {
@@ -226,7 +228,7 @@ export const proxyImage = async (req, res) => {
         
         response.data.pipe(res);
     } catch (err) {
-        console.error(`[Image Proxy Error]: ${err.message}`);
+        console.error(`[Image Proxy Error]: ${err.message}. ${err.response ? 'Status: ' + err.response.status : ''}`);
         res.status(500).send('Failed to proxy image');
     }
 };
