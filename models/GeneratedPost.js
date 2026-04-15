@@ -73,6 +73,14 @@ const GeneratedPostSchema = new mongoose.Schema({
   regenerationIntent: {
     type: String,
     comment: 'e.g. stronger CTA, shorter caption'
+  },
+  scheduledDate: { 
+    type: Date,
+    index: true 
+  },
+  dateString: {
+    type: String,
+    comment: 'Human readable date like Monday, Jan 1'
   }
 }, { timestamps: true });
 

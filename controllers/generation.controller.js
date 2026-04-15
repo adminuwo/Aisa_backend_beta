@@ -151,6 +151,27 @@ export const deletePost = async (req, res) => {
   }
 };
 
+export const deleteAllBrandAssets = async (req, res) => {
+  try {
+    const { workspaceId } = req.params;
+    if (!workspaceId) return res.status(400).json({ success: false, error: 'workspaceId required' });
+    
+    // Find assets before deleting to log or potentially delete from GCS 
+    const genAssets = await GeneratedAsset.find({ workspaceId });
+    if (genAssets.length === 0) {
+       return res.json({ success: true, message: "No assets found to delete" });
+    }
+
+    // Hard delete all GeneratedAssets for the workspace
+    await GeneratedAsset.deleteMany({ workspaceId });
+    
+    res.json({ success: true, message: `All ${genAssets.length} generated posts for brand deleted successfully.` });
+  } catch (error) {
+    logger.error(`[GenerationController] deleteAllBrandAssets failed: ${error.message}`);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
 export const getAssets = async (req, res) => {
   try {
     const { workspaceId } = req.params;
@@ -172,13 +193,23 @@ export const getAssets = async (req, res) => {
     const IMAGE_MIMETYPES = /^image\//;
     const VIDEO_MIMETYPES = /^video\//;
 
+    // Pre-fetch all calendar entries for generated assets in one batch query
+    const calendarEntryIds = genAssets
+      .map(a => a.calendarEntryId)
+      .filter(Boolean);
+    const calendarEntries = calendarEntryIds.length > 0
+      ? await CalendarEntry.find({ _id: { $in: calendarEntryIds } }).lean()
+      : [];
+    const calendarEntryMap = Object.fromEntries(calendarEntries.map(e => [String(e._id), e]));
+
     const allAssets = [
       ...genAssets
         .filter(a => !a.mimeType || IMAGE_MIMETYPES.test(a.mimeType) || VIDEO_MIMETYPES.test(a.mimeType))
         .map(a => ({
           ...a.toObject(),
           assetSource: 'generated',
-          originalName: a.metadata?.originalName || 'AI Content'
+          originalName: a.metadata?.originalName || 'AI Content',
+          calendarEntry: a.calendarEntryId ? calendarEntryMap[String(a.calendarEntryId)] || null : null
         })),
       ...uploadAssets.map(a => ({
         ...a.toObject(),
@@ -196,13 +227,28 @@ export const getAssets = async (req, res) => {
     // Pagination
     const paginated = filtered.slice((page - 1) * limit, page * limit);
 
-    // 4. Generate Signed URLs/Proxies
+    // 4. Generate Signed URLs/Proxies (primary + carousel slides)
     const assetsWithUrls = await Promise.all(paginated.map(async (asset) => {
       try {
         asset.gcsUrl = await socialAgentService.generateSignedUrl(asset.gcsUrl);
       } catch (e) {
         logger.warn(`[getAssets] Signed URL failed for ${asset._id}: ${e.message}`);
       }
+
+      // Also sign all carousel slide URLs stored in metadata.slides
+      if (asset.assetType === 'carousel' && Array.isArray(asset.metadata?.slides) && asset.metadata.slides.length > 0) {
+        try {
+          const signedSlides = await Promise.all(
+            asset.metadata.slides.map(slideUrl =>
+              socialAgentService.generateSignedUrl(slideUrl).catch(() => slideUrl)
+            )
+          );
+          asset.metadata = { ...asset.metadata, slides: signedSlides };
+        } catch (e) {
+          logger.warn(`[getAssets] Carousel slide signing failed for ${asset._id}: ${e.message}`);
+        }
+      }
+
       return asset;
     }));
 

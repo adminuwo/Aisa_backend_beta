@@ -37,10 +37,10 @@ const cleanBrandName = (raw, domain = '') => {
     .split(/\s*[\|–—\-:]\s*/)[0]  // Take part before first separator
     .replace(/\s*(official|home|welcome|site|web|online|™|®|inc|ltd|pvt)\s*/gi, '')
     .trim();
-  
+
   // If the result is just a generic term or too long, fallback to domain-based cleaning
   if (name.length > 60 || /^(home|welcome|index)$/i.test(name)) {
-     if (domain) name = domain.split('.')[0].charAt(0).toUpperCase() + domain.split('.')[0].slice(1);
+    if (domain) name = domain.split('.')[0].charAt(0).toUpperCase() + domain.split('.')[0].slice(1);
   }
   return name;
 };
@@ -137,31 +137,35 @@ const extractColorsFromCSS = ($) => {
 const extractColorsFromLogo = async (logoUrl) => {
   if (!logoUrl) return [];
   try {
+    if (logoUrl.toLowerCase().endsWith('.svg')) {
+      console.log(`[Vibrant] Skipping color extraction for SVG logo: ${logoUrl}`);
+      return [];
+    }
     const palette = await Vibrant.from(logoUrl).getPalette();
     const colors = [];
-    
+
     const isValid = (hex) => {
       if (!hex) return false;
       const r = parseInt(hex.slice(1, 3), 16);
       const g = parseInt(hex.slice(3, 5), 16);
       const b = parseInt(hex.slice(5, 7), 16);
-      
+
       // Skip backgrounds and high-contrast text noise
       if (r > 240 && g > 240 && b > 240) return false; // Near white
       if (r < 40 && g < 40 && b < 40) return false;   // Near black (shadows/text)
-      
+
       // Skip grayscale (low saturation)
       const max = Math.max(r, g, b);
       const min = Math.min(r, g, b);
-      if (max - min < 25) return false; 
-      
+      if (max - min < 25) return false;
+
       return true;
     };
 
     const isTooClose = (hex1, hex2) => {
       const r1 = parseInt(hex1.slice(1, 3), 16), g1 = parseInt(hex1.slice(3, 5), 16), b1 = parseInt(hex1.slice(5, 7), 16);
       const r2 = parseInt(hex2.slice(1, 3), 16), g2 = parseInt(hex2.slice(3, 5), 16), b2 = parseInt(hex2.slice(5, 7), 16);
-      const dist = Math.sqrt((r1-r2)**2 + (g1-g2)**2 + (b1-b2)**2);
+      const dist = Math.sqrt((r1 - r2) ** 2 + (g1 - g2) ** 2 + (b1 - b2) ** 2);
       return dist < 35; // Too similar
     };
 
@@ -175,7 +179,7 @@ const extractColorsFromLogo = async (logoUrl) => {
     if (palette.DarkVibrant) addUnique(palette.DarkVibrant.hex);
     if (palette.Muted) addUnique(palette.Muted.hex);
     if (palette.LightVibrant) addUnique(palette.LightVibrant.hex);
-    
+
     return colors.filter(Boolean);
   } catch (e) {
     console.warn('[Vibrant] color extraction failed:', e.message);
@@ -188,27 +192,40 @@ const extractColorsFromLogo = async (logoUrl) => {
  * Priority: og:logo > structured-data > apple-touch-icon > rel=icon SVG/PNG > img[logo] > favicon.ico
  */
 const findBestLogoUrl = ($, baseUrl) => {
-  // 1. Semantic logo selectors (common in modern frameworks)
-  const selectors = [
-    'link[rel="icon"][type*="svg"]', // SVGs are best
+  // 1. Semantic & Standard Meta signal (High confidence)
+  const metaSelectors = [
     'meta[property="og:logo"]',
     'meta[name="twitter:logo"]',
-    'link[rel="apple-touch-icon"]',
-    'link[rel="mask-icon"]',
-    '#logo img',
-    '.logo img',
-    'header img[src*="logo"]',
-    'a[class*="logo"] img',
-    'a[id*="logo"] img'
+    'meta[property="og:image"]', // Use social image as logo fallback
+    'meta[name="twitter:image"]'
   ];
 
-  for (const s of selectors) {
-     const found = s.includes('meta') ? $(s).attr('content') : s.includes('link') ? $(s).attr('href') : $(s).attr('src');
+  for (const s of metaSelectors) {
+     const found = $(s).attr('content');
      if (found) return resolveToAbsolute(found, baseUrl);
   }
 
-  // 1.5 Structural fallbacks (Common for sites without "logo" in filename)
-  // Check first image in header or nav, or image inside the home link
+  // 2. Look for explicit "logo" images in common containers (Very high confidence)
+  const logoSelectors = [
+    'a[class*="logo"] img',
+    'a[id*="logo"] img',
+    '.nav-logo img',
+    '#logo img',
+    '.logo img',
+    'header img[src*="logo" i]',
+    'nav img[src*="logo" i]',
+    'img[class*="logo" i]',
+    'img[id*="logo" i]',
+    'img[class*="brand" i]',
+    'img[alt*="logo" i]'
+  ];
+
+  for (const s of logoSelectors) {
+    const found = $(s).attr('src');
+    if (found) return resolveToAbsolute(found, baseUrl);
+  }
+
+  // 3. Structural fallback: First image in header or nav (Medium confidence)
   const structuralLogo = 
     $('header img').first().attr('src') || 
     $('nav img').first().attr('src') ||
@@ -217,7 +234,7 @@ const findBestLogoUrl = ($, baseUrl) => {
 
   if (structuralLogo) return resolveToAbsolute(structuralLogo, baseUrl);
 
-  // 2. JSON-LD structured data (schema.org Organization)
+  // 4. JSON-LD structured data (Schema.org Organization)
   let jsonLdLogo = null;
   $('script[type="application/ld+json"]').each((_, el) => {
     if (jsonLdLogo) return;
@@ -225,8 +242,8 @@ const findBestLogoUrl = ($, baseUrl) => {
       const data = JSON.parse($(el).html() || '{}');
       const arr = Array.isArray(data) ? data : [data];
       for (const item of arr) {
-        const orgItem = item?.['@type']?.toLowerCase?.();
-        if ((orgItem === 'organization' || orgItem === 'brand') && item.logo) {
+        const type = item?.['@type']?.toLowerCase?.() || '';
+        if ((type.includes('organization') || type.includes('brand')) && item.logo) {
           jsonLdLogo = typeof item.logo === 'string' ? item.logo : item.logo?.url || item.logo?.contentUrl;
           if (jsonLdLogo) break;
         }
@@ -235,9 +252,33 @@ const findBestLogoUrl = ($, baseUrl) => {
   });
   if (jsonLdLogo) return resolveToAbsolute(jsonLdLogo, baseUrl);
 
-  // 3. Fallback to common favicon locations if above fails
-  const favIcon = $('link[rel~="icon"]').attr('href') || '/favicon.ico';
-  return resolveToAbsolute(favIcon, baseUrl);
+  // 6. Generic image search for "logo" or "brand" in filename (Last resort img tags)
+  const allImgs = $('img').get();
+  for (const img of allImgs) {
+    const src = $(img).attr('src');
+    const alt = $(img).attr('alt') || '';
+    const cls = $(img).attr('class') || '';
+    if (src && (src.toLowerCase().includes('logo') || alt.toLowerCase().includes('logo') || cls.toLowerCase().includes('logo'))) {
+      return resolveToAbsolute(src, baseUrl);
+    }
+  }
+
+  // 7. Favicons & Apple Touch Icons
+  const lowPrioSelectors = [
+    'link[rel="apple-touch-icon"]',
+    'link[rel="icon"][sizes="192x192"]',
+    'link[rel="icon"][sizes="144x144"]',
+    'link[rel="icon"][type*="svg"]',
+    'link[rel*="icon"]'
+  ];
+
+  for (const s of lowPrioSelectors) {
+    const found = $(s).attr('href');
+    if (found) return resolveToAbsolute(found, baseUrl);
+  }
+
+  console.warn(`[Scraper] No logo found for ${baseUrl}, falling back to favicon.ico`);
+  return resolveToAbsolute('/favicon.ico', baseUrl);
 };
 
 /**
@@ -321,11 +362,11 @@ const crawlBrandContext = async (baseUrl, initialHtml = null) => {
   const visited = new Set([baseUrl, baseUrl + '/']);
   const chunks = [];
   const MAX_PAGES = 8;
-  
+
   try {
     const html = initialHtml || await fetchHtml(baseUrl, 5000);
     const $ = cheerio.load(html);
-    
+
     // 1. Initial homepage crawl
     const extractText = (selector) => {
       const arr = [];
@@ -435,7 +476,11 @@ export const extractBrandMetadata = async (targetUrl) => {
     domain.split('.')[0].charAt(0).toUpperCase() + domain.split('.')[0].slice(1);
 
   // 3. Logo discovery
+  console.log(`[Scraper] Starting logo discovery for ${url}...`);
   const logoUrl = findBestLogoUrl($, url);
+  if (logoUrl) console.log(`[Scraper] Found best logo candidate: ${logoUrl}`);
+  else console.warn(`[Scraper] No logo candidate found for ${url}`);
+
   const faviconUrl = resolveToAbsolute(
     $('link[rel="icon"]').first().attr('href') ||
     $('link[rel="shortcut icon"]').attr('href') ||

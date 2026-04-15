@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 
 const SocialAgentWorkspaceSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  workspaceName: { type: String, default: 'My Workspace' },
+  isPersonalProfile: { type: Boolean, default: false },
   planType: { type: String, enum: ['Low', 'Medium', 'High'], default: 'Low' },
   selectedPlatforms: [{ type: String, enum: ['Instagram', 'Facebook', 'LinkedIn', 'X/Twitter', 'Threads', 'Pinterest', 'YouTube'] }],
   postSizeRules: {

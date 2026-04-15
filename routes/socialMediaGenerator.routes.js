@@ -38,7 +38,7 @@ router.delete('/workspace/:workspaceId', socialAgentController.deleteWorkspace);
 // POST /api/social-agent/brand/upload - Upload brand logo and overview document
 router.post('/brand/upload', upload.fields([
   { name: 'logo', maxCount: 1 }, 
-  { name: 'overview', maxCount: 1 }
+  { name: 'overview', maxCount: 5 }
 ]), socialAgentController.uploadBrandAssets);
 
 // POST /api/social-agent/profile/upload-image - Upload user profile picture
@@ -107,6 +107,9 @@ router.delete('/posts/:postId', generationController.deletePost);
 
 // GET /api/social-agent/assets/:workspaceId - All generated media files for gallery
 router.get('/assets/:workspaceId', generationController.getAssets);
+
+// DELETE /api/social-agent/assets/:workspaceId - Hard delete all generated media files for a brand
+router.delete('/assets/:workspaceId', generationController.deleteAllBrandAssets);
 
 // --- Tab-Wise Generation Routes (Stage 3) ---
 router.post('/content/generate/:calendarRowId', generationController.generateFromCalendarRow);

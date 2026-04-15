@@ -10,6 +10,6 @@ const upload = multer({ storage: multer.memoryStorage() });
 router.post('/fetch', verifyToken, fetchBrandAssets);
 
 // NEW Stage 4: THE REAL MAGIC — Instant asset-to-DNA synthesis for auto-fill
-router.post('/quick-analysis', verifyToken, upload.single('file'), quickAnalysis);
+router.post('/quick-analysis', verifyToken, upload.array('files', 5), quickAnalysis);
 
 export default router;

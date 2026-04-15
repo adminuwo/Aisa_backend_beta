@@ -11,16 +11,36 @@ const storage = new Storage({
  * Usage: GET /api/media/proxy?url=https://storage.googleapis.com/bucket-name/folder/file.png
  */
 router.get('/proxy', async (req, res) => {
-  const { url } = req.query;
+  let { url } = req.query;
   
   if (!url) {
     return res.status(400).send('Missing URL parameter');
+  }
+
+  // Guard: Detect double-proxied URLs (e.g. the url param is itself a /api/media/proxy?url=... URL)
+  // This happens when the frontend wraps an already-proxied URL in another proxy call.
+  // Unwrap the inner URL so we proxy the real resource, not ourselves.
+  try {
+    const parsed = new URL(url);
+    if (parsed.pathname.endsWith('/proxy') && parsed.searchParams.has('url')) {
+      const innerUrl = parsed.searchParams.get('url');
+      console.warn(`[Media Proxy] Double-proxy detected — unwrapping inner URL: ${innerUrl}`);
+      url = innerUrl;
+    }
+  } catch (_) {
+    // url is not a valid absolute URL — leave it as-is and let the handler below deal with it
   }
 
   try {
     // 1. If it's a GCS URL, use the Storage SDK for authenticated/optimized access
     if (url.includes('storage.googleapis.com')) {
       const rawParts = url.split('storage.googleapis.com/')[1];
+
+      // Safety guard: malformed or missing GCS path
+      if (!rawParts) {
+        return res.status(400).send('Invalid GCS URL — missing bucket/object path');
+      }
+
       const bucketInUrl = rawParts.split('/')[0];
       const fileName = rawParts.split('/').slice(1).join('/');
 

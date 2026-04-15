@@ -55,6 +55,10 @@ const GeneratedAssetSchema = new mongoose.Schema({
   metadata: {
     type: mongoose.Schema.Types.Mixed,
     default: {}
+  },
+  dateString: {
+    type: String,
+    comment: 'Human readable date like Monday, Jan 1'
   }
 }, { timestamps: true });
 

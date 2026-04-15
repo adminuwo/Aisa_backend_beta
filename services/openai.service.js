@@ -65,10 +65,11 @@ Understand the user's expertise level and topic preference implicitly from their
         const response = await axios.post(
             'https://api.openai.com/v1/chat/completions',
             {
-                model: 'gpt-4o-mini',
+                model: options.model || 'gpt-4o-mini',
                 messages: messages,
-                max_tokens: 4096,
-                temperature: 0.7
+                max_tokens: options.max_tokens || 4096,
+                temperature: options.temperature || 0.7,
+                response_format: options.jsonMode ? { type: 'json_object' } : undefined
             },
             {
                 headers: {

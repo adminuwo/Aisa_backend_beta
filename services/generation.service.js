@@ -19,26 +19,17 @@ function safeParse(content) {
   
   let clean = content.replace(/```json\s*|\s*```/g, '').trim();
 
-  // Try to find the most likely JSON boundary
-  const firstBrace = clean.indexOf('{');
-  const firstBracket = clean.indexOf('[');
-  const lastBrace = clean.lastIndexOf('}');
-  const lastBracket = clean.lastIndexOf(']');
-
-  let startIdx = -1;
-  if (firstBrace !== -1 && firstBracket !== -1) startIdx = Math.min(firstBrace, firstBracket);
-  else startIdx = Math.max(firstBrace, firstBracket);
-
-  const endIdx = Math.max(lastBrace, lastBracket);
-
-  if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
-    const candidate = clean.substring(startIdx, endIdx + 1).trim();
+  // Step 1: Regex-based extraction (more robust than basic indexOf/lastIndexOf)
+  // Look for the outermost {} or [] pair
+  const jsonRegex = /({[\s\S]*}|\[[\s\S]*\])/;
+  const match = clean.match(jsonRegex);
+  
+  if (match) {
+    const candidate = match[0].trim();
     try {
       return JSON.parse(candidate);
     } catch (e) {
-      // If the full span fails, maybe there is garbage between two valid JSONs? 
-      // Or maybe the endIdx is wrong because of a brace in a string.
-      // We'll proceed to the aggressive fixer with the candidate.
+      // Proceed to aggressive fixing if match exists but is slightly broken
       clean = candidate;
     }
   }
@@ -88,14 +79,16 @@ function safeParse(content) {
       // This solves the 'Unexpected non-whitespace character' error
       if (lastE.message.includes('Unexpected non-whitespace character')) {
         for (let j = clean.length - 1; j > 0; j--) {
-           if (clean[j] === '}' || clean[j] === ']') {
-             try {
-               return JSON.parse(clean.substring(0, j + 1));
-             } catch (f) { /* continue */ }
-           }
+          if (clean[j] === '}' || clean[j] === ']') {
+            try {
+              return JSON.parse(clean.substring(0, j + 1));
+            } catch (f) { /* continue */ }
+          }
         }
       }
       
+      console.error("[JSON Fixer] CRITICAL FAILURE. Raw content that failed parse:", content);
+      logger.error(`[JSON Recovery] Final attempt failed. Raw sample: ${content?.substring(0, 200)}...`);
       throw new Error(`AI response invalid: ${lastE.message}`);
     }
   }
@@ -107,6 +100,8 @@ const PROMPTS = {
     You are a Senior Brand Strategist. Distill the following brand profile into a dense "Marketing Core".
     BRAND: ${brand.companyName || 'Our Brand'}
     TONE: ${brand.toneOfVoice || brand.structuredIdentity?.tone || 'Professional'}
+    CORE OBJECTIVES: ${brand.contentObjective || 'Awareness'}
+    KNOWLEDGE BASE: ${brand.extractedBrandSummary || brand.companyOverviewText || 'N/A'}
     IDENTITY: ${JSON.stringify(brand.structuredIdentity)}
     
     OUTPUT JSON:
@@ -166,10 +161,13 @@ export const generate30DayStrategy = async (workspaceId) => {
 
     // 1. STRATEGY
     const strategistPrompt = `
-      Create a 30-day content strategy.
+      Create a 30-day high-performance social media content strategy.
       BRAND: ${JSON.stringify(brand.structuredIdentity)}
+      BRAND DNA: ${brand.extractedBrandSummary || 'N/A'}
       GOAL: ${brand.contentObjective || "Awareness"}
-      
+      CAMPAIGN MONTH: ${brand.campaignMonth || "Current"}
+      TARGET INDUSTRY: ${brand.targetIndustry || "General"}
+
       OUTPUT JSON (STRICT):
       {
         "strategy_summary": "Concise summary",
@@ -179,7 +177,10 @@ export const generate30DayStrategy = async (workspaceId) => {
       }
     `;
 
-    const stratRes = await AskOpenAIRaw(strategistPrompt);
+    const stratRes = await AskOpenAIRaw(strategistPrompt, null, { 
+      jsonMode: true, 
+      systemInstruction: "You are a Brand Strategist. Output ONLY the requested JSON object. No conversational text." 
+    });
     const strategyDoc = safeParse(stratRes);
 
     await SocialAgentWorkspace.findByIdAndUpdate(workspaceId, {
@@ -191,40 +192,76 @@ export const generate30DayStrategy = async (workspaceId) => {
       }
     });
 
-    // 2. CALENDAR
-    const daysPerWeek = [7, 7, 7, 9];
-    const startDate = new Date();
+    // 2. CALENDAR (Respect Month & Frequency)
+    const freq = (brand.postingFrequency || 'Daily').toLowerCase();
+    const postsPerWeek = freq.includes('high') ? 5 : freq.includes('regular') ? 3 : freq.includes('low') ? 1 : 7;
     
-    const weekPromises = daysPerWeek.map(async (daysToGen, i) => {
-      const idx = i;
-      const startDayIdx = i === 0 ? 0 : daysPerWeek.slice(0, i).reduce((a, b) => a + b, 0);
-      const builderPrompt = `
-        Create a ${daysToGen}-day calendar Week ${idx+1}.
-        BRAND: ${JSON.stringify(brand.structuredIdentity)}
-        THEME: ${strategyDoc.weekly_themes[idx] || "General"}
+    // Map Month String to Starting Date
+    const monthMap = {
+      'january': 0, 'february': 1, 'march': 2, 'april': 3, 'may': 4, 'june': 5,
+      'july': 6, 'august': 7, 'september': 8, 'october': 9, 'november': 10, 'december': 11
+    };
+    const selectedMonth = (brand.campaignMonth || 'January').toLowerCase();
+    const monthIndex = monthMap[selectedMonth] ?? 0;
+    
+    // Use current year as base
+    const currentYear = new Date().getFullYear();
+    const startDate = new Date(currentYear, monthIndex, 1);
+    
+    console.log(`[Stage 2] Generating ${postsPerWeek} posts/week for ${brand.campaignMonth} starting ${startDate.toDateString()}`);
 
-        OUTPUT JSON ARRAY:
-        [
-          {
-            "date": "YYYY-MM-DD", "phase": "...", "platform": "...", "format": "...", "post_type": "...",
-            "heading_hook": "...", "sub_heading": "...", "short_caption": "...", "long_caption": "...",
-            "hashtags": "...", "breakdown": "..."
-          }
-        ]
+    const weekPromises = [0, 1, 2, 3].map(async (weekNum) => {
+      const startDayIdx = weekNum * 7;
+      const builderPrompt = `
+        Create a ${postsPerWeek}-day content calendar for Week ${weekNum + 1} of ${brand.campaignMonth} ${currentYear}.
+        BRAND: ${JSON.stringify(brand.structuredIdentity)}
+        THEME: ${strategyDoc.weekly_themes[weekNum] || "General"}
+        DNA INSIGHTS: ${brand.extractedBrandSummary || ''}
+        STRATEGY CONTEXT: ${strategyDoc.strategy_summary}
+        PLATFORM FOCUS: ${JSON.stringify(brand.structuredIdentity.platform_focus)}
+        PLAN: ${postsPerWeek} high-quality posts for this week.
+
+        OUTPUT JSON (STRICT):
+        {
+          "entries": [
+            {
+              "date": "YYYY-MM-DD", "phase": "...", "platform": "...", "format": "...", "post_type": "...",
+              "heading_hook": "...", "sub_heading": "...", "short_caption": "...", "long_caption": "...",
+              "hashtags": "...", "breakdown": "..."
+            }
+          ]
+        }
         
+        Important: All dates MUST be within ${brand.campaignMonth} ${currentYear}.
         Dates start: ${new Date(startDate.getTime() + startDayIdx * 86400000).toISOString().split('T')[0]}.
+        Entries priority: Spread these across the week reasonably.
       `;
 
-      const weekRes = await AskOpenAIRaw(builderPrompt);
-      return safeParse(weekRes);
+      try {
+        const weekRes = await AskOpenAIRaw(builderPrompt, null, { 
+          jsonMode: true, 
+          systemInstruction: `You are a content writer for ${brand.campaignMonth}. Output ONLY a valid JSON object. No conversational text.` 
+        });
+        const parsed = safeParse(weekRes);
+        return Array.isArray(parsed) ? parsed : (parsed.entries || parsed.calendar || []);
+      } catch (weekErr) {
+        logger.error(`[Stage 2] Week ${weekNum + 1} generation failed: ${weekErr.message}`);
+        return [];
+      }
     });
 
     const results = await Promise.all(weekPromises);
-    const strategyArray = results.flat();
-
+    // 3. SORT AND SAVE
+    // Clear existing pending entries for this brand
     await CalendarEntry.deleteMany({ workspaceId, status: 'pending' });
+
+    // SORT strategyArray by date string (YYYY-MM-DD) to ensure absolutely sequential order
+    const sortedStrategy = results.flat()
+      .filter(item => !!item.date)
+      .sort((a, b) => a.date.localeCompare(b.date));
+
     const entries = [];
-    for (const item of strategyArray) {
+    for (const item of sortedStrategy) {
       if (!item.date) continue;
       const entry = await CalendarEntry.create({
         workspaceId, calendarId: calendar._id, date: item.date, scheduledDate: new Date(item.date),
@@ -236,18 +273,18 @@ export const generate30DayStrategy = async (workspaceId) => {
       entries.push(entry);
     }
 
-    const excelBuffer = await socialAgentService.generateCalendarExcel(entries);
-    const gcsRes = await socialAgentService.uploadBufferToGCS(excelBuffer, `Plan_${workspaceId}.xlsx`, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Calendar');
-
-    calendar.excelUrl = gcsRes.url;
+    if (entries.length > 0) {
+      const excelBuffer = await socialAgentService.generateCalendarExcel(entries);
+      if (excelBuffer) {
+        const gcsRes = await socialAgentService.uploadBufferToGCS(excelBuffer, `Plan_${workspaceId}.xlsx`, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Calendar');
+        calendar.excelUrl = gcsRes.url;
+      }
+    }
+    
     calendar.status = 'generated';
     await calendar.save();
 
-    // AUTO-TRIGGER: Generate first 3 posts immediately so the dashboard is functional
-    startGenerationJob(workspaceId, 'today', { count: 3 })
-      .catch(err => logger.error(`[Auto-Generate] Initial strategy batch failed for ws ${workspaceId}: ${err.message}`));
-
-    return { status: "success", calendar_id: calendar._id, excel_url: gcsRes.url, calendar: entries };
+    return { status: "success", calendar_id: calendar._id, excel_url: calendar.excelUrl, calendar: entries };
   } catch (error) {
     logger.error(`[Stage 2] Failed: ${error.message}`);
     throw error;
@@ -287,12 +324,20 @@ export const generateContentForSpecificRow = async (workspaceId, entryId) => {
     hook: copyOutput.hook, onAssetText: copyOutput.onAssetText, captionShort: copyOutput.captionShort,
     captionLong: copyOutput.captionLong, hashtags: copyOutput.hashtags, cta: copyOutput.cta, 
     variations: copyOutput.variations || [],
+    scheduledDate: entry.scheduledDate,
+    dateString: entry.scheduledDate ? new Date(entry.scheduledDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : entry.date,
     status: 'draft'
   });
 
   logger.info(`[GenerationService] Orchestrating visual asset generation for post ${post._id}`);
   const mediaUrl = await mockMediaGeneration();
-  const asset = await GeneratedAsset.create({ postId: post._id, workspaceId, assetType: type, gcsUrl: mediaUrl });
+  const asset = await GeneratedAsset.create({ 
+    postId: post._id, 
+    workspaceId, 
+    assetType: type, 
+    gcsUrl: mediaUrl,
+    dateString: post.dateString 
+  });
 
   post.primaryAssetId = asset._id;
   await post.save();
@@ -582,34 +627,75 @@ Output ONLY the raw Imagen prompt text, nothing else. No JSON, no explanation.`;
 
   const trimmedPrompt = imagenPrompt.trim();
   console.log(`    ✅ Prompt received (${trimmedPrompt.length} chars) in ${Date.now() - promptStart}ms`);
-  if (isCarousel) {
-    console.log(`    📑 Carousel mode — GPT-4 generated 5 slide prompts`);
-  }
-  console.log(`    📝 Preview: "${trimmedPrompt.substring(0, 120)}..."`);
+  
+  let finalImagePrompt = trimmedPrompt;
+  let carouselSlides = [];
 
-  // For carousel, use the first slide prompt for the cover image
-  const finalImagePrompt = isCarousel
-    ? trimmedPrompt.split(/\n?1\.\s*/)[1]?.split(/\n?2\.\s*/)[0]?.trim() || trimmedPrompt
-    : trimmedPrompt;
+  if (isCarousel) {
+    console.log(`    📑 Carousel mode — Parsing 5 slide prompts...`);
+    // Split by markers like "1. ", "2. ", or simply double newlines if markers aren't perfectly followed
+    const slideMatches = trimmedPrompt.split(/\n?\d+\.\s*/).filter(s => s.trim().length > 10);
+    
+    // Take exactly 5 or whatever we have
+    const slidePrompts = slideMatches.slice(0, 5);
+    if (slidePrompts.length < 5) {
+       console.warn(`    ⚠️  Only parsed ${slidePrompts.length}/5 slides. Attempting line-split fallback.`);
+       // Minimal fallback if the numbering was weird
+       const fallback = trimmedPrompt.split('\n').filter(l => l.trim().length > 30).slice(0, 5);
+       if (fallback.length > slidePrompts.length) carouselSlides = fallback;
+       else carouselSlides = slidePrompts;
+    } else {
+       carouselSlides = slidePrompts;
+    }
+    
+    // Use the first slide as the representitive "cover" prompt for legacy single-image fields
+    finalImagePrompt = carouselSlides[0] || trimmedPrompt;
+    console.log(`    ✅ Successfully parsed ${carouselSlides.length} slides.`);
+  }
 
   // ── STEP 2: Vertex AI Imagen Generation ─────────────────────────
-  console.log(`\n[Step 2/5] 🖼  Vertex AI Imagen Generation...`);
+  console.log(`\n[Step 2/5] 🖼  Vertex AI Imagen Generation (Format: ${postFormat})...`);
   const imagenStart = Date.now();
 
   const selectedModel = modelId || 'imagen-3.0-generate-001';
   console.log(`    🤖 Calling model: ${selectedModel}`);
-  console.log(`    📐 Aspect ratio : 1:1`);
+  
+  let imageUrl = '';
+  let generatedSlides = [];
 
-  const imageUrl = await generateImageFromPrompt(finalImagePrompt, null, '1:1', selectedModel);
+  if (isCarousel && carouselSlides.length > 0) {
+    console.log(`    ⚡ Staggered Rendering ${carouselSlides.length} slides (1.2s apart to manage quota)...`);
+    // Stagger calls 1.2s apart to avoid hitting Imagen's concurrent quota limit
+    for (let i = 0; i < carouselSlides.length; i++) {
+      const p = carouselSlides[i];
+      console.log(`       -> Rendering Slide ${i+1}/${carouselSlides.length}: "${p.substring(0, 40)}..."`);
+      try {
+        const result = await generateImageFromPrompt(p, null, '1:1', selectedModel);
+        if (result) generatedSlides.push(result);
+        else console.warn(`       ⚠️  Slide ${i+1} returned empty URL`);
+      } catch (err) {
+        console.error(`       ❌ Slide ${i+1} failed: ${err.message}`);
+      }
+      // Wait 1.2s between slides to avoid rate limiting (except after last slide)
+      if (i < carouselSlides.length - 1) {
+        await new Promise(r => setTimeout(r, 1200));
+      }
+    }
+    imageUrl = generatedSlides[0] || '';
+    console.log(`    ✅ ${generatedSlides.length}/${carouselSlides.length} slides rendered successfully.`);
+  } else {
+    // Single image generation
+    console.log(`    📐 Aspect ratio : 1:1`);
+    imageUrl = await generateImageFromPrompt(finalImagePrompt, null, '1:1', selectedModel);
+  }
 
-  if (!imageUrl) {
+  if (!imageUrl && generatedSlides.length === 0) {
     console.error('[VisualPost] ❌ Vertex AI returned no image URL');
     throw new Error('Vertex AI Imagen returned no image URL');
   }
 
   const imagenMs = Date.now() - imagenStart;
-  console.log(`    ✅ Image rendered in ${imagenMs}ms`);
-  console.log(`    🔗 GCS URL: ${imageUrl.substring(0, 80)}...`);
+  console.log(`    ✅ Generation cycle complete in ${imagenMs}ms`);
 
   // ── STEP 3: Save GeneratedAsset to DB ────────────────────────────
   console.log('\n[Step 3/5] 💾 Saving GeneratedAsset to MongoDB...');
@@ -617,6 +703,7 @@ Output ONLY the raw Imagen prompt text, nothing else. No JSON, no explanation.`;
 
   const assetName = `visual_${title.replace(/\s+/g, '_').substring(0, 30)}_${Date.now()}.png`;
   const resolvedAssetType = postFormat === 'carousel' ? 'carousel' : postType;
+  
   const asset = await GeneratedAsset.create({
     workspaceId,
     calendarEntryId: entry._id,
@@ -624,9 +711,12 @@ Output ONLY the raw Imagen prompt text, nothing else. No JSON, no explanation.`;
     assetSource: 'generated',
     gcsUrl: imageUrl,
     mimeType: 'image/png',
+    dateString: entry.scheduledDate ? new Date(entry.scheduledDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : entry.date,
     metadata: {
       prompt: finalImagePrompt,
       fullCarouselPrompt: isCarousel ? trimmedPrompt : undefined,
+      slides: isCarousel ? generatedSlides : undefined, // Array of URLs for frontend carousel
+      slidePrompts: isCarousel ? carouselSlides : undefined,
       originalName: assetName,
       platform,
       phase,
@@ -637,7 +727,7 @@ Output ONLY the raw Imagen prompt text, nothing else. No JSON, no explanation.`;
   });
 
   console.log(`    ✅ GeneratedAsset saved: ${asset._id}`);
-  console.log(`    📁 Asset name   : ${assetName}`);
+  console.log(`    📁 Asset name   : ${assetName} | Slides: ${generatedSlides.length}`);
   console.log(`    ⏱  Saved in ${Date.now() - assetStart}ms`);
 
   // ── STEP 4: Mark GenerationJob as Completed ──────────────────────

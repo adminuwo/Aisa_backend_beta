@@ -29,6 +29,9 @@ export const fetchBrandAssets = async (req, res) => {
     });
 
     const dna = result.structuredIdentity;
+    console.log(`[Real Magic] Synthesis Complete for: ${dna.brand_name}`);
+    console.log(`[Real Magic] Logo Extracted: ${dna.logo_url || 'None'}`);
+    console.log(`[Real Magic] Colors Found: ${dna.color_palette?.length || 0}`);
 
     // Map back to frontend expected keys
     res.status(200).json({
@@ -40,8 +43,8 @@ export const fetchBrandAssets = async (req, res) => {
       industry: dna.industry,
       products_services: dna.products_services,
       brand_values: dna.brand_values,
-      logoUrl: result.webData?.logo || null,
-      faviconUrl: result.webData?.favicon || null,
+      logoUrl: dna.logo_url || null,
+      faviconUrl: result.webData?.faviconUrl || result.webData?.favicon || null,
       domain: url.replace(/^https?:\/\//, '').split('/')[0],
       success: true
     });
@@ -62,91 +65,122 @@ export const fetchBrandAssets = async (req, res) => {
  */
 export const quickAnalysis = async (req, res) => {
   try {
-    const file = req.file;
+    const files = req.files || [];
     const { workspaceId } = req.body;
 
-    if (!file) {
-      console.warn(`[Real Magic] QuickAnalysis called without file.`);
-      return res.status(400).json({ success: false, error: "No file uploaded" });
+    if (files.length === 0) {
+      console.warn(`[Real Magic] QuickAnalysis called without files.`);
+      return res.status(400).json({ success: false, error: "No files uploaded" });
     }
 
-    console.log(`[Real Magic] Analyzing DNA for file: ${file.originalname} (Mime: ${file.mimetype}, Size: ${file.size}, Workspace: ${workspaceId || 'None'})`);
+    console.log(`[Real Magic] Analyzing DNA for ${files.length} files. Workspace: ${workspaceId || 'None'}`);
 
     const { extractColorsFromLogo, parseBrandDocument } = await import('../services/brandProcessor.service.js');
     const { AskVertexRaw } = await import('../services/vertex.service.js');
 
-    let gcsUrl = null;
+    let allParsedText = "";
+    let allColors = [];
+    let gcsUrls = [];
 
-    // --- 1. PERSISTENT STORAGE (Dedicated Folder) ---
-    if (workspaceId && workspaceId !== 'undefined' && workspaceId !== 'null') {
-      try {
-        const folder = file.mimetype.startsWith('image/')
-          ? `brands/${workspaceId}/logo`
-          : `brands/${workspaceId}/guidelines`;
+    // Process all files in parallel
+    await Promise.all(files.map(async (file) => {
+      let gcsUrl = null;
 
-        const uploadRes = await uploadToGCS(file, folder);
-        gcsUrl = uploadRes.url;
+      console.log(`[Quick Analysis] Processing file: ${file.originalname} (${file.mimetype})`);
 
-        // Track the asset
-        await new UploadAsset({
-          workspaceId,
-          assetType: file.mimetype.startsWith('image/') ? 'logo' : 'overview',
-          gcsUrl,
-          fileName: file.originalname,
-          mimeType: file.mimetype
-        }).save();
+      // 1. PERSISTENT STORAGE
+      if (workspaceId && workspaceId !== 'undefined' && workspaceId !== 'null') {
+        try {
+          const folder = file.mimetype.startsWith('image/')
+            ? `brands/${workspaceId}/logo`
+            : `brands/${workspaceId}/guidelines`;
 
-        // Update Brand Profile link if possible
-        const brand = await BrandProfile.findOne({ workspaceId });
-        if (brand) {
-          if (file.mimetype.startsWith('image/')) brand.logoUrl = gcsUrl;
-          else brand.companyOverviewFileUrl = gcsUrl;
-          await brand.save();
+          const uploadRes = await uploadToGCS(file, folder);
+          gcsUrl = uploadRes.url;
+          gcsUrls.push(gcsUrl);
+
+          console.log(`[Quick Analysis] Uploaded ${file.originalname} to GCS: ${gcsUrl}`);
+
+          await new UploadAsset({
+            workspaceId,
+            assetType: file.mimetype.startsWith('image/') ? 'logo' : 'overview',
+            gcsUrl,
+            fileName: file.originalname,
+            mimeType: file.mimetype
+          }).save();
+
+          const brand = await BrandProfile.findOne({ workspaceId });
+          if (brand) {
+            if (file.mimetype.startsWith('image/')) {
+              brand.logoUrl = gcsUrl;
+              console.log(`[Quick Analysis] Updated Brand logoUrl: ${gcsUrl}`);
+            } else {
+              brand.companyOverviewFileUrl = gcsUrl; // Legacy support
+              if (!brand.companyOverviewFileUrls) brand.companyOverviewFileUrls = [];
+              if (!brand.companyOverviewFileUrls.includes(gcsUrl)) {
+                brand.companyOverviewFileUrls.push(gcsUrl);
+              }
+              console.log(`[Quick Analysis] Added to Brand companyOverviewFileUrls. Count: ${brand.companyOverviewFileUrls.length}`);
+            }
+            await brand.save();
+          }
+        } catch (uploadErr) {
+          console.error(`[Quick Analysis] Upload/Persistence failed for ${file.originalname}: ${uploadErr.message}`);
         }
-      } catch (uploadErr) {
-        console.error(`[Real Magic] Upload/Save failed, continuing with analysis: ${uploadErr.message}`);
-      }
-    }
-
-    // --- 2. AI ANALYSIS ---
-    if (file.mimetype.startsWith('image/')) {
-      const colors = await extractColorsFromLogo(file.buffer);
-      console.log(`[Real Magic] Colors extracted: ${colors.join(', ')}`);
-      return res.json({ brandColors: colors, gcsUrl, success: true });
-    } else {
-      console.log(`[Real Magic] Parsing document text...`);
-      const text = await parseBrandDocument(file.buffer, file.mimetype);
-      
-      if (!text || text.trim().length < 10) {
-        console.warn(`[Real Magic] Document parsing returned empty or very short text.`);
-        return res.json({ success: false, error: "Could not extract enough text from the document. Please try a different format or manual entry." });
       }
 
-      console.log(`[Real Magic] Sending to Vertex for DNA Synthesis...`);
-      const aiPrompt = `Analyze this brand document and extract its identity.
+      // 2. EXTRACTION
+      if (file.mimetype.startsWith('image/')) {
+        const colors = await extractColorsFromLogo(file.buffer);
+        allColors = [...allColors, ...colors];
+        console.log(`[Quick Analysis] Extracted ${colors.length} colors from logo: ${file.originalname}`);
+      } else {
+        const text = await parseBrandDocument(file.buffer, file.mimetype);
+        if (text) {
+           allParsedText += `\nFILE: ${file.originalname}\n${text}\n---\n`;
+           console.log(`[Quick Analysis] Parsed ${text.length} chars from document: ${file.originalname}`);
+        } else {
+           console.warn(`[Quick Analysis] Parsing returned no text for document: ${file.originalname}`);
+        }
+      }
+    }));
+
+    // Deduplicate colors
+    allColors = [...new Set(allColors)];
+
+    // Summary of extracted data
+    let responseData = { success: true, brandColors: allColors, gcsUrls };
+
+    if (allParsedText.trim().length > 10) {
+      console.log(`[Real Magic] Sending aggregated text to Vertex for DNA Synthesis...`);
+      const aiPrompt = `Analyze these brand documents and extract a unified identity.
       Return strictly valid JSON format:
       {
         "brandName": "...",
-        "summary": "Full mission/vision description",
+        "summary": "Full mission/vision description combining all insights",
         "tone": "Bold / Professional / etc"
       }
       
-      TEXT: ${text.substring(0, 5000)}`;
+      TEXT: ${allParsedText.substring(0, 7000)}`;
 
-      const aiRes = await AskVertexRaw(aiPrompt);
-      const dna = JSON.parse(aiRes.replace(/```json|```/g, ''));
-
-      console.log(`[Real Magic] DNA Synthesis complete for: ${dna.brandName}`);
-      return res.json({
-        brandName: dna.brandName,
-        extractedBrandSummary: dna.summary,
-        toneOfVoice: dna.tone,
-        gcsUrl,
-        success: true
-      });
+      try {
+        const aiRes = await AskVertexRaw(aiPrompt);
+        const dna = JSON.parse(aiRes.replace(/```json|```/g, ''));
+        responseData = { 
+          ...responseData,
+          brandName: dna.brandName,
+          extractedBrandSummary: dna.summary,
+          toneOfVoice: dna.tone
+        };
+        console.log(`[Real Magic] DNA Synthesis complete for: ${dna.brandName}`);
+      } catch (aiErr) {
+        console.error(`[Real Magic] AI Synthesis specifically failed: ${aiErr.message}`);
+      }
     }
+
+    return res.json(responseData);
   } catch (error) {
-    console.error(`[Real Magic] Analysis failed: ${error.message}`);
-    res.json({ success: false, error: `DNA analysis failed: ${error.message}. Manual entry suggested.` });
+    console.error(`[Real Magic] Fatal Analysis failed: ${error.message}`);
+    res.status(500).json({ success: false, error: `DNA analysis failed: ${error.message}.` });
   }
 };

@@ -77,9 +77,9 @@ export const extractColorsFromLogo = async (buffer) => {
       const r = parseInt(hex.slice(1, 3), 16);
       const g = parseInt(hex.slice(3, 5), 16);
       const b = parseInt(hex.slice(5, 7), 16);
-      // Skip near-white (background) and near-black (text/outline)
-      if (r > 245 && g > 245 && b > 245) return false;
-      if (r < 15 && g < 15 && b < 15) return false;
+      // Skip extreme white/black background noise, but keep brand colors
+      if (r > 252 && g > 252 && b > 252) return false;
+      if (r < 8 && g < 8 && b < 8) return false;
       // Also skip gray-scale if possible (low saturation)
       const max = Math.max(r, g, b);
       const min = Math.min(r, g, b);
@@ -160,11 +160,37 @@ export const processBrandIdentity = async ({
     let rawKnowledgeBase = '';
 
     // Parallel processing (Advanced Scraper handles all visual/textual discovery)
-    const [docText, logoColors, advancedWebData] = await Promise.all([
-      pdfBuffer ? parseBrandDocument(pdfBuffer, pdfMimeType) : Promise.resolve(''),
-      logoBuffer ? extractColorsFromLogo(logoBuffer) : Promise.resolve([]),
+    console.log(`[Stage 1] Triggering parallel insights extraction...`);
+
+    const pdfBuffers = Array.isArray(pdfBuffer) ? pdfBuffer : (pdfBuffer ? [pdfBuffer] : []);
+    
+    const [docTexts, advancedWebData] = await Promise.all([
+      pdfBuffers.length > 0 
+        ? Promise.all(pdfBuffers.map(buf => parseBrandDocument(buf, pdfMimeType || 'application/pdf')))
+        : Promise.resolve([]),
       websiteUrl ? extractBrandMetadata(websiteUrl) : Promise.resolve(null)
     ]);
+
+    // Handle Logo Color Extraction (Uploaded OR Discovered)
+    let finalColors = [];
+    if (logoBuffer) {
+      console.log(`[Stage 1] Extracting colors from uploaded logo buffer...`);
+      finalColors = await extractColorsFromLogo(logoBuffer);
+    } else if (advancedWebData?.logoUrl || advancedWebData?.logo) {
+      const targetLogo = advancedWebData.logoUrl || advancedWebData.logo;
+      console.log(`[Stage 1] Attempting color extraction from discovered logo: ${targetLogo}`);
+      try {
+        const logoRes = await axios.get(targetLogo, { responseType: 'arraybuffer', timeout: 5000 });
+        finalColors = await extractColorsFromLogo(Buffer.from(logoRes.data));
+        console.log(`[Stage 1] Extracted ${finalColors.length} colors from discovered logo.`);
+      } catch (err) {
+        console.warn(`[Stage 1] Failed to fetch web logo for color extraction: ${err.message}`);
+      }
+    }
+    
+    const docText = docTexts.filter(Boolean).join('\n---\n');
+    const logoColors = finalColors;
+    console.log(`[Stage 1] Parallel insights extraction complete. Docs: ${docTexts.length} | Colors: ${logoColors.length}`);
 
     const webData = advancedWebData; // Unified source
 
@@ -279,10 +305,10 @@ export const processBrandIdentity = async ({
     return {
       structuredIdentity: {
         ...structuredIdentity,
-        logo_url: advancedWebData?.logoUrl || webData?.logo || advancedWebData?.faviconUrl || ''
+        logo_url: advancedWebData?.logoUrl || advancedWebData?.logo || advancedWebData?.faviconUrl || ''
       },
       rawKnowledgeBase,
-      webData,
+      webData: advancedWebData,
       advancedMetadata: advancedWebData
     };
   } catch (error) {

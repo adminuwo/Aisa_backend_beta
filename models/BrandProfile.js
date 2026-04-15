@@ -6,6 +6,7 @@ const BrandProfileSchema = new mongoose.Schema({
   website: { type: String },
   companyOverviewText: { type: String },
   companyOverviewFileUrl: { type: String },
+  companyOverviewFileUrls: [String],
   logoUrl: { type: String },
   brandColors: [String],
   themePreference: { type: String },

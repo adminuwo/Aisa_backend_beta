@@ -20,14 +20,15 @@ import UploadAsset from '../models/UploadAsset.js';
  */
 export const createWorkspace = async (req, res) => {
   try {
-    const { workspaceName, selectedPlatforms, planType } = req.body;
+    const { workspaceName, selectedPlatforms, planType, isPersonalProfile } = req.body;
     const userId = req.user.id;
 
     const workspace = new SocialAgentWorkspace({
       userId,
       workspaceName: workspaceName || 'My Workspace',
       selectedPlatforms: selectedPlatforms || [],
-      planType: planType || 'Low'
+      planType: planType || 'Low',
+      isPersonalProfile: isPersonalProfile || false
     });
     await workspace.save();
 
@@ -70,27 +71,29 @@ export const completeOnboarding = async (req, res) => {
 
     if (!workspace) return res.status(404).json({ success: false, message: 'Workspace not found' });
 
-    // 2. Initialize or Update the BrandProfile with collected setup data
-    let brandProfile = await BrandProfile.findOne({ workspaceId });
-    if (!brandProfile) brandProfile = new BrandProfile({ workspaceId });
+    // 2. Initialize or Update the BrandProfile with collected setup data (SKIP IF PERSONAL PROFILE)
+    if (!workspace.isPersonalProfile) {
+      let brandProfile = await BrandProfile.findOne({ workspaceId });
+      if (!brandProfile) brandProfile = new BrandProfile({ workspaceId });
 
-    if (brandName) {
-      brandProfile.companyName = brandName;
-      // NEW: Sync workspace name with Brand Name for cleaner UI
-      await SocialAgentWorkspace.findByIdAndUpdate(workspaceId, { workspaceName: brandName });
+      if (brandName) {
+        brandProfile.companyName = brandName;
+        // NEW: Sync workspace name with Brand Name for cleaner UI
+        await SocialAgentWorkspace.findByIdAndUpdate(workspaceId, { workspaceName: brandName });
+      }
+      if (businessDescription) brandProfile.companyOverviewText = businessDescription;
+      if (brandColors && Array.isArray(brandColors)) brandProfile.brandColors = brandColors;
+      if (fontFamily) brandProfile.fontFamily = fontFamily;
+      if (targetEthnicity) brandProfile.targetEthnicity = targetEthnicity;
+      if (logoUrl) brandProfile.logoUrl = logoUrl;
+
+      await brandProfile.save();
     }
-    if (businessDescription) brandProfile.companyOverviewText = businessDescription;
-    if (brandColors && Array.isArray(brandColors)) brandProfile.brandColors = brandColors;
-    if (fontFamily) brandProfile.fontFamily = fontFamily;
-    if (targetEthnicity) brandProfile.targetEthnicity = targetEthnicity;
-    if (logoUrl) brandProfile.logoUrl = logoUrl;
-
-    await brandProfile.save();
 
     // Re-fetch workspace to get updated name
     const updatedWorkspace = await SocialAgentWorkspace.findById(workspaceId);
 
-    res.json({ success: true, workspace: updatedWorkspace, brandProfile });
+    res.json({ success: true, workspace: updatedWorkspace });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -191,17 +194,17 @@ export const uploadBrandAssets = async (req, res) => {
 
     // Handle files (Logo and Overview)
     const logoFile = req.files && req.files.logo ? req.files.logo[0] : null;
-    const overviewFile = req.files && req.files.overview ? req.files.overview[0] : null;
+    const overviewFiles = req.files && req.files.overview ? req.files.overview : [];
 
-    console.log(`[Stage 1] Initializing DNA Synthesis for Workspace=${workspaceId}`);
+    console.log(`[Stage 1] Initializing DNA Synthesis for Workspace=${workspaceId}. Docs: ${overviewFiles.length}`);
     logger.info(`[Stage 1] DNA Pulse: ${companyName} | Industry: ${targetIndustry} | Objective: ${contentObjective}`);
 
     const results = await brandProcessor.processBrandIdentity({
       brandName: companyName,
       websiteUrl: website,
       logoBuffer: logoFile ? logoFile.buffer : null,
-      pdfBuffer: overviewFile ? overviewFile.buffer : null,
-      pdfMimeType: overviewFile ? overviewFile.mimetype : null,
+      pdfBuffer: overviewFiles.map(f => f.buffer), // Array of buffers
+      pdfMimeType: overviewFiles[0]?.mimetype || 'application/pdf',
       manualDescription: extractedBrandSummary || brandProfile.extractedBrandSummary || '',
       tone: toneOfVoice,
       ctaStyle: ctaStyle
@@ -233,15 +236,22 @@ export const uploadBrandAssets = async (req, res) => {
       brandProfile.logoUrl = logoUrl;
     }
 
-    // 3. Handle Overview PDF Upload
-    if (overviewFile) {
-      const { url } = await socialAgentService.uploadToGCS(overviewFile, `brands/${workspaceId}/overview`);
-      brandProfile.companyOverviewFileUrl = url;
-      await new UploadAsset({
-        workspaceId, assetType: 'overview', gcsUrl: url,
-        fileName: overviewFile.originalname, mimeType: overviewFile.mimetype
-      }).save();
-      console.log(`[Stage 1] Strategy Doc preserved in GCS: ${url}`);
+    // 3. Handle Overview PDF Uploads (Multiple) - Parallel Execution
+    if (overviewFiles.length > 0) {
+      console.log(`[Stage 1] Dispatching ${overviewFiles.length} docs to GCS parallel pipeline...`);
+      const uploadPromises = overviewFiles.map(async (file) => {
+        const { url } = await socialAgentService.uploadToGCS(file, `brands/${workspaceId}/overview`);
+        await new UploadAsset({
+          workspaceId, assetType: 'overview', gcsUrl: url,
+          fileName: file.originalname, mimeType: file.mimetype
+        }).save();
+        return url;
+      });
+
+      const urls = await Promise.all(uploadPromises);
+      brandProfile.companyOverviewFileUrls = urls;
+      brandProfile.companyOverviewFileUrl = urls[0]; // Legacy primary
+      console.log(`[Stage 1] ${urls.length} Strategy Docs preserved in GCS.`);
     }
 
     // --- OTHER PREFERENCES ---
@@ -458,7 +468,7 @@ export const uploadCalendar = async (req, res) => {
 export const getCalendarEntries = async (req, res) => {
   try {
     const { workspaceId } = req.params;
-    const entries = await CalendarEntry.find({ workspaceId }).sort({ scheduledDate: 1 });
+    const entries = await CalendarEntry.find({ workspaceId }).sort({ scheduledDate: 1, date: 1 });
     res.json({ success: true, entries });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -662,7 +672,7 @@ export const getPipelines = async (req, res) => {
 export const getPipelineRows = async (req, res) => {
   try {
     const { calendarId } = req.params;
-    const rows = await CalendarEntry.find({ calendarId }).sort({ scheduledDate: 1 });
+    const rows = await CalendarEntry.find({ calendarId }).sort({ scheduledDate: 1, date: 1 });
     res.json({ success: true, rows });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
