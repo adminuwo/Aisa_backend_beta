@@ -111,6 +111,9 @@ router.get('/assets/:workspaceId', generationController.getAssets);
 // DELETE /api/social-agent/assets/:workspaceId - Hard delete all generated media files for a brand
 router.delete('/assets/:workspaceId', generationController.deleteAllBrandAssets);
 
+// POST /api/social-agent/assets/generate - Manual one-off asset creation
+router.post('/assets/generate', socialAgentController.generateOneOffAsset);
+
 // --- Tab-Wise Generation Routes (Stage 3) ---
 router.post('/content/generate/:calendarRowId', generationController.generateFromCalendarRow);
 router.post('/generate/calendar', generationController.generateCalendar);

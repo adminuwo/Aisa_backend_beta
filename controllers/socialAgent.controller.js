@@ -71,6 +71,7 @@ export const completeOnboarding = async (req, res) => {
 
     if (!workspace) return res.status(404).json({ success: false, message: 'Workspace not found' });
 
+    /* 
     // 2. Initialize or Update the BrandProfile with collected setup data (SKIP IF PERSONAL PROFILE)
     if (!workspace.isPersonalProfile) {
       let brandProfile = await BrandProfile.findOne({ workspaceId });
@@ -89,6 +90,7 @@ export const completeOnboarding = async (req, res) => {
 
       await brandProfile.save();
     }
+    */
 
     // Re-fetch workspace to get updated name
     const updatedWorkspace = await SocialAgentWorkspace.findById(workspaceId);
@@ -146,13 +148,13 @@ export const getWorkspace = async (req, res) => {
     const { id } = req.params;
     if (id && id !== 'current') {
       const workspace = await SocialAgentWorkspace.findOne({ _id: id, userId: req.user.id });
-      if (!workspace) return res.status(404).json({ success: false, message: 'Workspace not found' });
+      if (!workspace) return res.status(200).json({ success: false, message: 'Workspace not found' });
       return res.json({ success: true, workspace });
     }
 
     // Otherwise return the OLDEST workspace first (the primary workspace with most data)
     const workspace = await SocialAgentWorkspace.findOne({ userId: req.user.id }).sort({ createdAt: 1 });
-    if (!workspace) return res.status(404).json({ success: false, message: 'Workspace not found' });
+    if (!workspace) return res.status(200).json({ success: false, message: 'Workspace not found' });
     res.json({ success: true, workspace });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -277,7 +279,14 @@ export const getBrandProfile = async (req, res) => {
   try {
     const { workspaceId } = req.params;
     const brandProfile = await BrandProfile.findOne({ workspaceId });
-    if (!brandProfile) return res.status(404).json({ success: false, message: 'Brand profile not found' });
+    if (!brandProfile) {
+      // Return a skeleton profile instead of 404 to avoid frontend console errors during onboarding
+      return res.status(200).json({ 
+        success: false, 
+        message: 'No brand profile initialized yet',
+        brandProfile: { workspaceId, companyName: '', brandColors: [], toneOfVoice: '' } 
+      });
+    }
     res.json({ success: true, brandProfile });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -438,10 +447,7 @@ export const uploadCalendar = async (req, res) => {
       if (entries.length > 0) {
         await CalendarEntry.insertMany(entries);
 
-        // AUTO-TRIGGER: Generate first 3 days of posts immediately for the user
-        // This ensures the dashboard is functional as soon as the input is provided
-        generationService.startGenerationJob(workspaceId, 'today', { count: 3 })
-          .catch(err => logger.error(`[Auto-Generate] Initial batch failed for ws ${workspaceId}: ${err.message}`));
+        // No auto-trigger. Users must manually generate content in the Dashboard.
       }
       console.log(`[CALENDAR UPLOAD] Successfully saved ${entries.length} calendar entries to DB.`);
     } catch (dbErr) {
@@ -505,7 +511,11 @@ export const generateOneOffAsset = async (req, res) => {
       assetType: 'image',
       gcsUrl: uploadResult.url,
       mimeType: 'image/png',
-      metadata: { prompt, generatedAt: new Date() }
+      metadata: { 
+        prompt, 
+        isMagicCreate: true,
+        generatedAt: new Date() 
+      }
     });
     await asset.save();
 

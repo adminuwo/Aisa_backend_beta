@@ -74,7 +74,7 @@ export const triggerGeneration = async (req, res) => {
             logger.warn(`Could not fetch overview: ${e.message}`);
         }
 
-        const postsToGenerate = calendarData.slice(0, 30); // Limit to 30 for safety
+        const postsToGenerate = calendarData.slice(0, 31); // Limit to 31 to cover all month lengths
         const generatedPosts = [];
 
         logger.info(`[SocialMedia] Starting batch generation for ${postsToGenerate.length} items`);

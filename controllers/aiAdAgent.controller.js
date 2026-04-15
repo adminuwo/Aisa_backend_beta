@@ -41,7 +41,7 @@ export const configureAiAdAgent = async (req, res) => {
                 const mockPosts = [];
                 const now = new Date();
                 
-                for (let i = 0; i < 30; i++) {
+                for (let i = 0; i < 31; i++) {
                     const scheduledDate = new Date(now);
                     scheduledDate.setDate(now.getDate() + i);
                     

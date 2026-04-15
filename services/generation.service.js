@@ -173,7 +173,7 @@ export const generate30DayStrategy = async (workspaceId) => {
         "strategy_summary": "Concise summary",
         "content_distribution": {"educational": "40%", "promotional": "30%", "engagement": "30%", "emotional": "0%"},
         "platform_plan": [{"platform": "Instagram", "strategy": "Concise"}],
-        "weekly_themes": ["Week 1 Theme", "Week 2 Theme", "Week 3 Theme", "Week 4 Theme"]
+        "weekly_themes": ["Theme for Week 1", "Theme for Week 2", "Theme for Week 3", "Theme for Week 4", "Theme for Week 5 (if applicable)"]
       }
     `;
 
@@ -208,18 +208,28 @@ export const generate30DayStrategy = async (workspaceId) => {
     const currentYear = new Date().getFullYear();
     const startDate = new Date(currentYear, monthIndex, 1);
     
-    console.log(`[Stage 2] Generating ${postsPerWeek} posts/week for ${brand.campaignMonth} starting ${startDate.toDateString()}`);
+    // Calculate actual days in this month
+    const totalDaysInMonth = new Date(currentYear, monthIndex + 1, 0).getDate();
+    const totalWeeks = Math.ceil(totalDaysInMonth / 7);
+    
+    console.log(`[Stage 2] Generating ${postsPerWeek} posts/week for ${brand.campaignMonth} (${totalDaysInMonth} days) starting ${startDate.toDateString()}`);
 
-    const weekPromises = [0, 1, 2, 3].map(async (weekNum) => {
+    const weekPromises = Array.from({ length: totalWeeks }).map(async (_, weekNum) => {
       const startDayIdx = weekNum * 7;
+      const remainingDays = totalDaysInMonth - startDayIdx;
+      const daysInThisChunk = Math.min(7, remainingDays);
+      
+      // Calculate how many posts to generate for this specific chunk (prorated for partial weeks)
+      const postsForThisChunk = Math.ceil((daysInThisChunk / 7) * postsPerWeek);
+
       const builderPrompt = `
-        Create a ${postsPerWeek}-day content calendar for Week ${weekNum + 1} of ${brand.campaignMonth} ${currentYear}.
+        Create a ${postsForThisChunk}-day content calendar for ${weekNum === 0 ? 'the first part' : 'Part ' + (weekNum + 1)} of ${brand.campaignMonth} ${currentYear}.
         BRAND: ${JSON.stringify(brand.structuredIdentity)}
-        THEME: ${strategyDoc.weekly_themes[weekNum] || "General"}
+        THEME: ${strategyDoc.weekly_themes[weekNum] || strategyDoc.weekly_themes[0] || "General"}
         DNA INSIGHTS: ${brand.extractedBrandSummary || ''}
         STRATEGY CONTEXT: ${strategyDoc.strategy_summary}
         PLATFORM FOCUS: ${JSON.stringify(brand.structuredIdentity.platform_focus)}
-        PLAN: ${postsPerWeek} high-quality posts for this week.
+        PLAN: ${postsForThisChunk} high-quality posts for this period.
 
         OUTPUT JSON (STRICT):
         {
@@ -234,7 +244,8 @@ export const generate30DayStrategy = async (workspaceId) => {
         
         Important: All dates MUST be within ${brand.campaignMonth} ${currentYear}.
         Dates start: ${new Date(startDate.getTime() + startDayIdx * 86400000).toISOString().split('T')[0]}.
-        Entries priority: Spread these across the week reasonably.
+        Period length: ${daysInThisChunk} days.
+        Entries priority: Spread these across the ${daysInThisChunk} days reasonably.
       `;
 
       try {
@@ -329,18 +340,9 @@ export const generateContentForSpecificRow = async (workspaceId, entryId) => {
     status: 'draft'
   });
 
-  logger.info(`[GenerationService] Orchestrating visual asset generation for post ${post._id}`);
-  const mediaUrl = await mockMediaGeneration();
-  const asset = await GeneratedAsset.create({ 
-    postId: post._id, 
-    workspaceId, 
-    assetType: type, 
-    gcsUrl: mediaUrl,
-    dateString: post.dateString 
-  });
-
-  post.primaryAssetId = asset._id;
-  await post.save();
+  // Content generation only: Post record is created without a primary asset yet.
+  // Visual assets are now isolated and generated only when 'Gen Post' is clicked.
+  // await post.save(); // Not strictly needed as create() already saved, but good for clarity if modified later
 
   if (usage) {
     logger.debug(`[GenerationService] Updating plan usage for ${workspaceId}`);
@@ -348,6 +350,11 @@ export const generateContentForSpecificRow = async (workspaceId, entryId) => {
   }
   
   entry.status = 'generated';
+  entry.hook = copyOutput.hook;
+  entry.captionShort = copyOutput.captionShort;
+  entry.captionLong = copyOutput.captionLong;
+  entry.hashtags = copyOutput.hashtags;
+  entry.breakdown = copyOutput.onAssetText; // Syncing visual text as breakdown
   await entry.save();
 
   logger.info(`[GenerationService] Successfully generated post ${post._id} for entry ${entryId}`);
@@ -740,11 +747,11 @@ Output ONLY the raw Imagen prompt text, nothing else. No JSON, no explanation.`;
   });
   console.log(`    ✅ Job ${jobId} → status: "completed"`);
 
-  // ── STEP 5: Mark CalendarEntry as Generated ──────────────────────
-  console.log('\n[Step 5/5] 📅 Updating CalendarEntry status...');
-  entry.status = 'generated';
-  await entry.save();
-  console.log(`    ✅ Entry ${entryId} → status: "generated"`);
+  // ── STEP 5: Mark CalendarEntry — LEAVE STATUS UNCHANGED FOR ISOLATION ────────────────
+  console.log('\n[Step 5/5] 📅 Keeping CalendarEntry status isolated...');
+  // entry.status = 'generated'; // Visual generation should not mark content as generated
+  // await entry.save();
+  console.log(`    ✅ Entry ${entryId} status preserved for content generation isolation`);
 
   // ── PIPELINE COMPLETE ────────────────────────────────────────────
   const totalMs = Date.now() - pipelineStart;
@@ -762,4 +769,4 @@ Output ONLY the raw Imagen prompt text, nothing else. No JSON, no explanation.`;
   return asset;
 };
 
-const mockMediaGeneration = async () => "https://storage.googleapis.com/social_media_agent_assets/mock/ai_post.png";
+// const mockMediaGeneration = async () => "https://storage.googleapis.com/social_media_agent_assets/mock/ai_post.png"; // Removed for isolation
