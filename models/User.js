@@ -109,7 +109,14 @@ const userSchema = new mongoose.Schema({
             name: String,
             enabled: { type: Boolean, default: true },
             permissions: { type: String, enum: ['Read', 'Write', 'ReadWrite'], default: 'Read' },
-            connectedAt: { type: Date, default: Date.now }
+            connectedAt: { type: Date, default: Date.now },
+            tokens: {
+                access_token: String,
+                refresh_token: String,
+                expiry_date: Number,
+                email_address: String,
+                token_type: String
+            }
         }],
 
         // Data Controls

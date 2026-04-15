@@ -43,24 +43,18 @@ const processDueReminder = async (reminder, now) => {
         logger.info(`[ReminderScheduler] Processing reminder: ${reminder.title} - ${reminder._id}`);
         // 1. Send Notification based on type
         if (reminder.notificationType === 'in-app' || reminder.notificationType === 'both') {
-            const user = await User.findById(reminder.userId);
-            if (user) {
-                const newNotification = {
-                    id: `reminder_${Date.now()}`,
-                    title: `Reminder: ${reminder.title}`,
-                    desc: reminder.description || 'Time to check your scheduled task.',
-                    type: 'alert',
-                    time: now,
-                    isRead: false,
-                    voice: reminder.voice || 'none'
-                };
-                
-                if (!user.notificationsInbox) user.notificationsInbox = [];
-                user.notificationsInbox.unshift(newNotification); // Add to top
-                await user.save();
-                logger.info(`[ReminderScheduler] Notification pushed to user ${user.email} inbox.`);
-            }
+            const { createNotification } = await import('./notificationService.js');
+            await createNotification(reminder.userId, {
+                id: `reminder_${reminder._id}`,
+                title: `Reminder: ${reminder.title}`,
+                desc: reminder.description || 'Time to check your scheduled task.',
+                type: 'alert',
+                voice: reminder.voice || 'none'
+            });
+
+            logger.info(`[ReminderScheduler] Real-time notification sent to user ${reminder.userId}`);
         }
+
         
         // Handle Repeat Logic
         if (reminder.repeat === 'none') {

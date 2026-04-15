@@ -37,7 +37,7 @@ const findOrCreateCorpus = async () => {
 
     try {
         const projectId = process.env.GCP_PROJECT_ID;
-        const location = process.env.GCP_LOCATION || 'asia-south1';
+        const location = process.env.GCP_LOCATION || 'us-central1';
 
         if (!projectId) {
             logger.error("[Vertex RAG] GCP_PROJECT_ID not set in environment.");
@@ -87,7 +87,7 @@ export const retrieveContextFromRag = async (query, topK = 8, category = 'LEGAL'
         }
 
         const projectId = process.env.GCP_PROJECT_ID;
-        const location = process.env.GCP_LOCATION || 'asia-south1';
+        const location = process.env.GCP_LOCATION || 'us-central1';
 
         if (!projectId) {
             logger.error("[Vertex RAG] Retrieval failed: GCP_PROJECT_ID not set in environment.");
@@ -122,8 +122,9 @@ export const retrieveContextFromRag = async (query, topK = 8, category = 'LEGAL'
 
         // Apply Confidence Logic
         const validContexts = contexts.filter(c => {
+            console.log(`[RAG DEBUG] Chunk distance: ${c.distance}`);
             if (c.distance === undefined || c.distance === null) return true;
-            return c.distance < 0.8; 
+            return c.distance < 0.99; // Relaxed threshold for better coverage
         });
 
         const Knowledge = (await import('../models/Knowledge.model.js')).default;
@@ -133,25 +134,25 @@ export const retrieveContextFromRag = async (query, topK = 8, category = 'LEGAL'
 
         for (const context of validContexts) {
             const gcsUri = context.sourceUri;
-            if (!gcsUri) continue;
-
-            // Strict Filter: Find document metadata to check category
-            const doc = await Knowledge.findOne({ gcsUri });
+            // Even if gcsUri is missing, still use the chunk text if present
+            const doc = gcsUri ? await Knowledge.findOne({ gcsUri }) : null;
             
-            // If document doesn't match the requested category, skip it entirely
-            if (!doc || doc.category !== category) {
-                continue;
-            }
+            console.log(`[RAG DEBUG] Chunk Source: ${gcsUri || 'N/A'} | DB Doc: ${doc ? 'FOUND' : 'NOT_IN_DB'} | DB Category: ${doc?.category || 'NONE'} | Requested: ${category}`);
 
-            let sourceName = doc.filename || "Knowledge Resource";
-            let sourceUrl = doc.sourceUrl || '';
+            // If doc not found in DB but we still have text, use it (don't skip)
+            // If doc is found, optionally filter by category (currently relaxed)
+            if (!context.text || context.text.trim().length === 0) continue;
+
+            // Build source info from doc if found, otherwise use sensible defaults
+            let sourceName = doc?.filename || (gcsUri ? gcsUri.split('/').pop() : 'Knowledge Resource');
+            let sourceUrl = doc?.sourceUrl || '';
 
             if (sourceUrl) {
                 try {
                     const urlObj = new URL(sourceUrl);
                     sourceName = urlObj.hostname.replace('www.', '');
                 } catch (e) {
-                    sourceName = "Official Website";
+                    sourceName = doc?.filename || "Knowledge Resource";
                 }
             }
 
@@ -160,11 +161,11 @@ export const retrieveContextFromRag = async (query, topK = 8, category = 'LEGAL'
                 url: sourceUrl || 'https://uwo24.com/',
                 snippet: context.text ? context.text.substring(0, 150) + '...' : '',
                 document_title: sourceName,
-                source_type: 'URL',
+                source_type: doc ? 'KNOWLEDGE_BASE' : 'RAG_CORPUS',
                 chunk_id: `chunk_${Date.now()}_${Math.random()}`
             });
 
-            const citation = sourceUrl ? `[Ref: ${sourceName}]` : `[Internal Knowledge]`;
+            const citation = sourceUrl ? `[Ref: ${sourceName}]` : `[Knowledge Base]`;
             retrievedTexts.push(`${citation}\n${context.text}`);
         }
 
@@ -326,9 +327,9 @@ export const AskVertexRaw = async (prompt, options = {}) => {
 
         if (typeof response.text === 'function') {
             return response.text();
-        } else if (response.candidates && response.candidates[0]?.content?.parts[0]?.text) {
+        } else if (response?.candidates?.[0]?.content?.parts?.[0]?.text) {
             return response.candidates[0].content.parts[0].text;
-        } else if (response.text && typeof response.text === 'string') {
+        } else if (response?.text && typeof response.text === 'string') {
             return response.text;
         }
 
@@ -451,7 +452,7 @@ export const askVertex = async (prompt, context = null, options = {}) => {
         if (typeof response.text === 'function') {
             text = response.text();
         } else if (response.candidates && response.candidates.length > 0) {
-            text = response.candidates[0].content.parts[0].text;
+            text = response.candidates[0]?.content?.parts?.[0]?.text || "No response generated.";
         } else {
             logger.warn(`[VERTEX] Unexpected response format: ${JSON.stringify(response)}`);
             text = "No response generated.";
@@ -502,7 +503,7 @@ export const importToVertexRag = async (gcsUris, originalName = 'batch_import') 
 
         const uris = Array.isArray(gcsUris) ? gcsUris : [gcsUris];
         const projectId = process.env.GCP_PROJECT_ID;
-        const location = process.env.GCP_LOCATION || 'asia-south1';
+        const location = process.env.GCP_LOCATION || 'us-central1';
 
         if (!projectId) {
             throw new Error("GCP_PROJECT_ID not set in environment.");
@@ -542,7 +543,7 @@ export const deleteFromVertexRag = async (gcsUri, originalName) => {
         if (!corpusId) return;
 
         const projectId = process.env.GCP_PROJECT_ID;
-        const location = process.env.GCP_LOCATION || 'asia-south1';
+        const location = process.env.GCP_LOCATION || 'us-central1';
 
         if (!projectId) return;
         const client = await auth.getClient();

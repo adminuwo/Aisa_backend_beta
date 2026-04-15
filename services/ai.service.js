@@ -126,7 +126,7 @@ export const chat = async (message, activeDocContent = null, options = {}) => {
         
         let toolRestrictions = "";
         if (isActuallyImageMode) {
-            toolRestrictions = "\n\n### MODE: IMAGE GENERATION ENABLED. You can generate images using JSON action strictly if explicitly asked.";
+            toolRestrictions = "\n\n### MODE: IMAGE GENERATION ENABLED. You can generate images using JSON action strictly if explicitly asked. CRITICAL: When creating the JSON action, your 'prompt' MUST preserve the exact main subject requested by the user. Do NOT change, replace, or creatively reimagine the core subject (e.g. if the user says 'panda' or misinterprets it as 'panada', use exactly what they intended or wrote). NEVER substitute the subject with a generic person or other unrelated concepts.";
         } else if (isActuallyVideoMode) {
             toolRestrictions = "\n\n### MODE: VIDEO GENERATION ENABLED. You can generate videos using JSON action strictly if explicitly asked.";
         } else if (isActuallySearchMode) {
@@ -134,11 +134,13 @@ export const chat = async (message, activeDocContent = null, options = {}) => {
         } else if (isActuallyCodeMode) {
             toolRestrictions = `
 \n\n### MODE: CODE WRITER ENABLED.
-- ROLE: You are an expert Software Architect and Senior Lead Developer. Your goal is to provide highly structured, technical, and implementation-ready architecture.
+- ROLE: You are an expert Software Architect and Senior Lead Developer. Your goal is to provide highly structured, technical, and complete implementation-ready code.
 - FORMATTING OVERRIDE: Ignore general rules about "Using bullet points for lists" when displaying project structures.
 - UNIFIED TREE: You MUST display the entire project/folder architecture inside ONE SINGLE markdown code block using a visual tree format (e.g., \`\`\`text).
-- CODE SNIPPETS: Wrap ALL code snippets in proper multi-line markdown code blocks with the correct language tag.
-- NO INLINE PATHS: Do not use single backticks for file names inside paragraphs if they are part of a structure.
+- FULL FILE CONTENT: After the tree structure, you MUST provide the COMPLETE, FULL code for each and every file listed in the tree. Do not just explain what the file does. Do not provide partial code or just the file name. Provide the actual, runnable code.
+- CODE BLOCKS: Wrap ALL code in proper multi-line markdown code blocks with the correct language tag (e.g., \`\`\`javascript, \`\`\`python, \`\`\`html).
+- FILE PATHS: Before every code block, clearly write the file path as a bold header (e.g., **src/server.js**). Do NOT place file names inside code blocks unless it's a comment inside the actual code.
+- NO INLINE PATHS AS CODE: Never output just the file name or folder name inside a code block. Code blocks are STRICTLY for the directory tree and the actual code.
 - EXAMPLE TREE FORMAT (MANDATORY):
 \`\`\`text
 ProjectRoot/
@@ -152,12 +154,20 @@ ProjectRoot/
 │   └── server.js
 └── package.json
 \`\`\`
-- CLEAN OUTPUT: Provide the unified Directory Tree first, then explain specific components or code snippets below the tree.
+- CLEAN OUTPUT: Provide the unified Directory Tree first, and then sequentially provide the bold file name followed by its complete code block for every file.
 `;
         } else if (isActuallyConvertMode) {
             toolRestrictions = "\n\n### MODE: FILE CONVERSION ENABLED. You can extract data or convert between formats.";
         } else if (mode === 'LEGAL_TOOLKIT') {
-            toolRestrictions = "\n\n### MODE: LEGAL SYSTEM ACTIVE. You are a Senior Legal Assistant specialist. Provide professional, structured legal guidance based on Indian Law unless otherwise specified. DO NOT include any legal disclaimers, warnings, or professional advice notices. The system will append these automatically.";
+            toolRestrictions = `\n\n### MODE: LEGAL SYSTEM ACTIVE — STRICT DOMAIN LOCK ⚖️
+- You are a Senior Legal Assistant specialist EXCLUSIVELY for legal matters.
+- 🚨 ABSOLUTE RESTRICTION: You MUST ONLY respond to queries related to: law, legal acts, IPC/CrPC/CPC sections, court procedures, legal documents, contracts, FIR, rights, legal strategy, affidavits, legal notices, evidence, case analysis, or any legal guidance.
+- 🚫 STRICTLY REFUSE any query that is NOT related to law or legal topics (e.g., general knowledge, coding, entertainment, science, weather, math, jokes, recipes, sports, technology, etc.).
+- IF the user asks a non-legal question, you MUST respond ONLY with this exact message (match the user's language):
+  "⚖️ I am the AISA AI Legal Assistant. I can only assist with legal matters — law, acts, sections, court procedures, legal documents, and legal guidance. Please ask a legal question."
+- DO NOT attempt to partially answer non-legal questions.
+- DO NOT add any conversational filler or apologies beyond the refusal message above.
+- DO NOT include any legal disclaimers, warnings, or professional advice notices in the response. The system appends these automatically.`;
         } else {
 
             toolRestrictions = "\n\n### MODE: NORMAL CHAT. Strictly avoid executing magic actions. Answer questions using text only. If the user wants to generate media, tell them to use the AISA Magic Tools menu.";
@@ -207,6 +217,20 @@ ProjectRoot/
                     };
                     return finalResponseData;
                 }
+            }
+        }
+
+        // --- GMAIL ASSISTANT ROUTING ---
+        if (classification && (classification.intent === 'gmail_assistant' || classification.tools?.includes('gmail_assistant'))) {
+            logger.info(`[AI-Service] Gmail Assistant intent detected. Triggering Gmail Service...`);
+            const { handleGmailIntent } = await import('./intent/gmailService.js');
+            const gmailResponse = await handleGmailIntent(userId, message);
+            if (gmailResponse) {
+                finalResponseData = { 
+                    text: gmailResponse.text,
+                    type: 'gmail_assistant_action'
+                };
+                return finalResponseData;
             }
         }
 
@@ -501,8 +525,9 @@ ProjectRoot/
     } catch (error) {
         logger.error(`[AI-CHAT-ERROR] Stack Trace: ${error.stack}`);
         logger.error(`[AI-CHAT-ERROR] Message: ${error.message}`);
+        const debugInfo = (process.env.NODE_ENV === 'development' || true) ? `\n\n*(Technical Error: ${error.message})*` : '';
         return { 
-            text: "I'm having trouble connecting to my brain right now. Please try again later.", 
+            text: "I'm having trouble connecting to my brain right now. Please try again later." + debugInfo, 
             error: true, 
             details: error.message 
         };

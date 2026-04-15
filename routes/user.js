@@ -236,55 +236,7 @@ route.delete("/avatar", verifyToken, async (req, res) => {
     }
 });
 
-// GET /api/user/notifications - Get notification inbox
-route.get("/notifications", verifyToken, async (req, res) => {
-    try {
-        const userId = req.user.id || req.user._id;
 
-        if (mongoose.connection.readyState !== 1) {
-            return res.status(200).json([
-                { id: 'demo_1', title: 'Offline Mode', desc: 'Running on local data.', type: 'alert', time: new Date() }
-            ]);
-        }
-
-        const user = await userModel.findById(userId).select('notificationsInbox').lean();
-        if (!user) return res.status(404).json({ error: "User not found" });
-
-        let inbox = user.notificationsInbox || [];
-
-        // If empty, return demo messages for the user
-        if (inbox.length === 0) {
-            inbox = [
-                {
-                    id: `demo_1`,
-                    title: 'Welcome to AISA!',
-                    desc: 'Start your journey with your Artificial Intelligence Super Assistant. Need help? Ask us anything!',
-                    type: 'promo',
-                    time: new Date()
-                },
-                {
-                    id: `demo_2`,
-                    title: 'AISA v2.4.0 is here!',
-                    desc: 'New features: Dynamic Accent Colors and improved Voice Synthesis are now live. Check them out in General settings.',
-                    type: 'update',
-                    time: new Date(Date.now() - 7200000)
-                },
-                {
-                    id: `demo_3`,
-                    title: 'Plan Expiring Soon',
-                    desc: 'Your "Pro" plan will end in 3 days. Renew now to keep enjoying unlimited AI access.',
-                    type: 'alert',
-                    time: new Date(Date.now() - 3600000)
-                },
-            ];
-        }
-
-        res.status(200).json(inbox);
-    } catch (error) {
-        console.error("[FETCH NOTIFICATIONS ERROR]", error);
-        res.status(500).json({ msg: "Failed to fetch notifications", error: error.message });
-    }
-});
 
 // GET /api/user/subscription - Get user subscription and usage status
 route.get("/subscription", verifyToken, async (req, res) => {
@@ -299,36 +251,7 @@ route.get("/subscription", verifyToken, async (req, res) => {
     }
 });
 
-// DELETE /api/user/notifications/:notifId - Delete a notification
-route.delete("/notifications/:notifId", verifyToken, async (req, res) => {
-    try {
-        const userId = req.user.id || req.user._id;
-        const { notifId } = req.params;
-        const user = await userModel.findByIdAndUpdate(userId, {
-            $pull: { notificationsInbox: { id: notifId } }
-        }, { new: true });
-        if (!user) return res.status(404).json({ error: "User not found" });
-        res.status(200).json({ msg: "Notification deleted" });
-    } catch (error) {
-        console.error("Delete notification error:", error);
-        res.status(500).json({ msg: "Failed to delete notification" });
-    }
-});
 
-// DELETE /api/user/notifications - Clear all notifications
-route.delete("/notifications", verifyToken, async (req, res) => {
-    try {
-        const userId = req.user.id || req.user._id;
-        const user = await userModel.findByIdAndUpdate(userId, {
-            $set: { notificationsInbox: [] }
-        }, { new: true });
-        if (!user) return res.status(404).json({ error: "User not found" });
-        res.status(200).json({ msg: "All notifications cleared" });
-    } catch (error) {
-        console.error("Clear notifications error:", error);
-        res.status(500).json({ msg: "Failed to clear notifications" });
-    }
-});
 
 
 // POST /api/user/personalizations/reset - Reset personalization preferences to defaults

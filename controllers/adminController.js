@@ -175,19 +175,20 @@ export const adjustCredits = async (req, res) => {
         }
         
         if (creditsToTransfer !== 0) {
+            const adminIdToUpdate = adminUser._id;
             const adminNewBalance = (adminUser.credits || 0) - creditsToTransfer;
             const targetUserNewBalance = newTargetCredits;
 
             // Deduct/Add from admin pool
-            await User.findByIdAndUpdate(adminId, { $set: { credits: adminNewBalance } });
+            await User.findByIdAndUpdate(adminIdToUpdate, { $set: { credits: adminNewBalance } });
             await Subscription.findOneAndUpdate(
-                { userId: adminId },
+                { userId: adminIdToUpdate },
                 { $set: { creditsRemaining: adminNewBalance } }
             );
             
             // Create CreditLog for admin
             await CreditLog.create({
-                userId: adminId,
+                userId: adminIdToUpdate,
                 action: creditsToTransfer > 0 ? 'Admin Credit Transfer to User' : 'Admin Credit Recovery from User',
                 credits: -creditsToTransfer,
                 balanceAfter: adminNewBalance,
@@ -317,6 +318,16 @@ export const deleteCreditPackage = async (req, res) => {
         const { packageId } = req.params;
         await CreditPackage.findByIdAndDelete(packageId);
         res.status(200).json({ success: true, message: "Package deleted successfully" });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+// Returns ALL plans (regardless of isActive) for admin use
+export const getAllPlansAdmin = async (req, res) => {
+    try {
+        const plans = await Plan.find({}).sort({ priceMonthly: 1 });
+        res.status(200).json({ success: true, plans });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }

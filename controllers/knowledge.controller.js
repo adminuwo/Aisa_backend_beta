@@ -110,10 +110,9 @@ export const uploadDocument = async (req, res) => {
         category = category.toUpperCase();
         
         // If it's not a specialized agent category, enforce the platform standard
-        if (!['LEGAL', 'GENERAL', 'AIADASSET'].includes(category)) {
+        if (!['LEGAL', 'GENERAL', 'AIADASSET', 'FINANCE'].includes(category)) {
             category = 'GENERAL';
         }
-
 
         // 3. Always Store Metadata (for listing)
         try {
@@ -350,7 +349,7 @@ export const uploadUrl = async (req, res) => {
         let { url, category = 'LEGAL', depth = 2, maxPages = 20, frequency = 'daily' } = req.body;
         
         category = category.toUpperCase();
-        if (!['LEGAL', 'GENERAL'].includes(category)) category = 'LEGAL';
+        if (!['LEGAL', 'GENERAL', 'FINANCE'].includes(category)) category = 'GENERAL';
 
         if (!url) {
             return res.status(400).json({ success: false, message: 'URL is required' });

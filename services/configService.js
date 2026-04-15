@@ -336,8 +336,8 @@ Instructions:
 - Combine information from multiple context sections if necessary.
 - Base your answer strictly on the provided context.
 - If multiple pieces of information are relevant, summarize them clearly.
-- If the answer is not found in the context, say:
-"I could not find this information in the available knowledge base."
+- If the answer is not found in the context, do your best to assist without mentioning internal knowledge limits. DO NOT say "I could not find this information in the available knowledge base".
+- NEVER show any RAG-related message or disclaimer regarding missing internal knowledge.
 
 Response Guidelines:
 - Start with the direct answer.
@@ -416,21 +416,16 @@ Response Guidelines:
             },
             {
                 key: 'IMAGE_PROMPT_ENHANCER',
-                value: `You are an advanced image generation controller for AISA™. 
-Generate a highly detailed prompt for an image generation model (like Imagen 3) based on the user's initial request. 
-The goal is to produce high-quality, visually appealing images AND intelligently embed text inside the image.
+                value: `You are an expert image prompt engineer for AISA™.
+Your ONLY job is to add visual descriptors (style, lighting, quality) to the user's prompt.
 
-### AISA™ BRAND IDENTITY:
-- Name: AISA™
-- Vibe: Futuristic, Modern, Premium, Intelligent, Clean, Reliable.
-- Visuals: Glowing blue and purple neural brain logo, glassmorphism, deep space blue backgrounds, advanced neural networks.
-
-### CORE RULES:
-1. TEXT DETECTION: Extract any title, slogan, or quote. If missing but implied, infer a short catchy title.
-2. PLACEMENT: Describe text placement in a visually balanced area (top-center, sky area, or empty space).
-3. STYLE: Use bold, clean typography. High contrast. Add subtle shadows/glow.
-4. QUALITY: Style must be Ultra-realistic or high-quality digital illustration. Cinematic lighting.
-5. NO FILLER: Respond ONLY with the final refined prompt.`,
+CRITICAL RULES — NEVER break these:
+1. NEVER change, replace, swap, or reinterpret the INTENDED main subject. If the user has an obvious typo (e.g. "panada" instead of "panda", "ctt" instead of "cat"), you MUST autocorrect it to the intended subject. Then, ensure the output contains that corrected subject. The intended subject is SACRED.
+2. NEVER invent a new animal, person, object, or scene that the user did not mention, except for the logical environment (e.g. bamboo forest for panda).
+3. ONLY add descriptors like: art style, lighting quality, camera angle, mood, rendering quality.
+4. Keep the output under 30 words.
+5. DO NOT include any prefix like "Prompt:" or "Enhanced:".
+6. If the prompt contains a placeholder like __PRODUCT_NAME__, treat it as a generic named entity — do NOT replace it with logos, brand visuals, or specific identifiable imagery.`,
                 description: 'Advanced rules for refining image generation prompts.'
             },
             {
@@ -466,9 +461,21 @@ DO NOT include any prefix. Keep it under 80 words for maximum impact.`,
                 existing.value = config.value;
                 existing.lastUpdated = Date.now();
                 await existing.save();
+            } else if (config.key === 'RAG_CONTEXT_TEMPLATE' && existing.value.includes('I could not find this information in the available knowledge base.')) {
+                // FEATURE PUSH: Remove RAG missing knowledge messages
+                logger.info(`[ConfigService] Updating ${config.key} to remove hardcoded missing knowledge message.`);
+                existing.value = config.value;
+                existing.lastUpdated = Date.now();
+                await existing.save();
             } else if (config.key === 'FEATURE_COSTS') {
                 // FORCE UPDATE: Ensure feature costs perfectly reflect the latest 50% profit margin calculations
                 logger.info(`[ConfigService] Synchronizing FEATURE_COSTS to latest default algorithm.`);
+                existing.value = config.value;
+                existing.lastUpdated = Date.now();
+                await existing.save();
+            } else if (config.key === 'IMAGE_PROMPT_ENHANCER' && !existing.value.includes('autocorrect it to the intended subject')) {
+                // FORCE UPDATE: Enforce strict subject preservation and autocorrect for image generation
+                logger.info(`[ConfigService] Synchronizing IMAGE_PROMPT_ENHANCER to prevent hallucination.`);
                 existing.value = config.value;
                 existing.lastUpdated = Date.now();
                 await existing.save();

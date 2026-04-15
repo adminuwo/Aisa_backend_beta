@@ -4,6 +4,7 @@ import { creditMiddleware } from '../middleware/creditSystem.js';
 import { generateChatResponse } from '../services/geminiService.js';
 import { getToolByName } from '../services/intent/toolRegistry.js';
 import { getLegalPrompt, LEGAL_DISCLAIMER } from '../services/legal/legalPrompts.js';
+import { subscriptionService } from '../services/subscriptionService.js';
 import logger from '../utils/logger.js';
 
 const router = express.Router();
@@ -84,6 +85,11 @@ ${message}
         if (!finalReply.startsWith('**[ACTIVE TOOL:')) {
             const toolDisplayName = tool.name || toolName;
             finalReply = `**[ACTIVE TOOL: ${toolDisplayName}]**\n\n` + finalReply;
+        }
+
+        // 💰 Deduct credits on successful execution
+        if (req.creditMeta && req.creditMeta.cost > 0) {
+            await subscriptionService.deductCreditsFromMeta(req.creditMeta);
         }
 
         return res.json({

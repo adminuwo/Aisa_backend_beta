@@ -19,18 +19,24 @@ import logger from '../utils/logger.js';
  */
 export const selectImageModel = (requestedModelId, quality = 'fast', isPremium = false) => {
     const modelMap = {
-        fast: 'imagen-3.0-generate-001',
-        quality: 'imagen-3.0-generate-001',
-        ultra: 'imagen-4.0-ultra-generate-001'
+        fast: 'gemini-3.1-flash-image-preview',
+        quality: 'gemini-2.5-flash-image',
+        ultra: 'gemini-3-pro-image-preview'
     };
 
     // If a valid model was explicitly selected, respect it
-    const knownModels = ['imagen-3.0-generate-001', 'imagen-3.0-generate-002', 'imagen-4.0-ultra-generate-001', 'gemini-1.5-pro'];
+    const knownModels = [
+        'gemini-3.1-flash-image-preview',
+        'gemini-3-pro-image-preview',
+        'gemini-2.5-flash-image'
+    ];
+    
     if (requestedModelId && knownModels.includes(requestedModelId)) {
-        // Restrict ultra to premium users
-        if (requestedModelId === 'imagen-4.0-ultra-generate-001' && !isPremium) {
-            logger.warn('[ModelSelector] Ultra model requested by non-premium user, downgrading to Standard');
-            return 'imagen-3.0-generate-001';
+        // Restrict pro models to premium users
+        const premiumModels = ['gemini-3-pro-image-preview'];
+        if (premiumModels.includes(requestedModelId) && !isPremium) {
+            logger.warn(`[ModelSelector] Premium model ${requestedModelId} requested by non-premium user, downgrading to Standard`);
+            return 'gemini-3.1-flash-image-preview';
         }
         return requestedModelId;
     }

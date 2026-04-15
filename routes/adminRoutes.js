@@ -14,8 +14,10 @@ import {
     updateCreditPackage,
     deleteCreditPackage,
     getFeatureCredits,
-    updateFeatureCredit
+    updateFeatureCredit,
+    getAllPlansAdmin
 } from '../controllers/adminController.js';
+
 
 const router = express.Router();
 
@@ -55,9 +57,11 @@ router.post('/adjust-credits', verifyToken, isAdmin, adjustCredits);
 router.post('/manual-upgrade', verifyToken, isAdmin, manualPlanUpgrade);
 
 // Plan routes
+router.get('/plans', verifyToken, isAdmin, getAllPlansAdmin);
 router.post('/plans', verifyToken, isAdmin, createPlan);
 router.put('/plans/:planId', verifyToken, isAdmin, updatePlan);
 router.delete('/plans/:planId', verifyToken, isAdmin, deletePlan);
+
 
 // Credit package routes
 router.post('/packages', verifyToken, isAdmin, createCreditPackage);

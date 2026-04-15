@@ -1,5 +1,5 @@
 /**
- * Mode Detection Utility for AISA
+ * Mode Detection Utility for AISA™
  * Automatically detects the appropriate mode based on user input and context
  */
 
@@ -149,7 +149,7 @@ Use "---SPLIT_RESPONSE---" delimiter between each file's analysis.` : ''}`;
 
     case MODES.NORMAL_CHAT:
     default:
-      const chatInstruct = getConfig('AISA_CONVERSATIONAL_RULES', `You are a friendly, intelligent conversational assistant.`);
+      const chatInstruct = getConfig('AISA_CONVERSATIONAL_RULES', `You are a friendly, intelligent conversational assistant for AISA™.`);
       return `${baseIdentity}\n\n${chatInstruct}${languageRule}`;
   }
 }

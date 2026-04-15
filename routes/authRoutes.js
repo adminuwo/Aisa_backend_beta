@@ -13,6 +13,7 @@ import { uploadToGCS, gcsFilename } from "../services/gcs.service.js";
 import { OAuth2Client } from "google-auth-library";
 import { getSmartAvatar, isGeneratedAvatar } from "../utils/avatarHelper.js";
 import { verifyToken } from "../middleware/authorization.js";
+import appleSignin from 'apple-signin-auth';
 
 const router = express.Router();
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
@@ -669,9 +670,160 @@ router.get("/microsoft", (req, res) => {
 });
 
 router.get("/apple", (req, res) => {
-  const { email } = req.query;
-  // Apple always redirects to simulation until real keys provided (requires complex private key setup)
-  res.send(devLoginTemplate('Apple', email));
+  const clientId = process.env.APPLE_CLIENT_ID;
+  if (!clientId || !process.env.APPLE_TEAM_ID || !process.env.APPLE_KEY_ID || !process.env.APPLE_PRIVATE_KEY) {
+    // Fallback to simulation template if credentials are missing
+    return res.send(devLoginTemplate('Apple', req.query.email));
+  }
+
+  const redirectUri = `${process.env.BACKEND_URL || 'http://localhost:8080'}/api/auth/apple/callback`;
+  const scope = 'name email';
+  const state = crypto.randomBytes(16).toString('hex');
+
+  const authorizationUrl = appleSignin.getAuthorizationUrl({
+    clientID: clientId,
+    redirectUri: redirectUri,
+    scope: scope,
+    state: state,
+    responseMode: 'form_post', // Apple requires form_post for name/email
+  });
+
+  res.redirect(authorizationUrl);
+});
+
+router.post("/apple/callback", async (req, res) => {
+  console.log(`[DEBUG Apple Callback Body]:`, JSON.stringify(req.body));
+  const { code, id_token: bodyIdToken, user: userJson, state } = req.body;
+
+  try {
+    console.log(`[DEBUG Apple] Apple Callback started. Code: ${code ? 'Present' : 'Missing'}, ID Token: ${bodyIdToken ? 'Present' : 'Missing'}`);
+
+    const clientId = process.env.APPLE_CLIENT_ID;
+    const teamId = process.env.APPLE_TEAM_ID;
+    const keyId = process.env.APPLE_KEY_ID;
+    let privateKey = process.env.APPLE_PRIVATE_KEY;
+    
+    console.log(`[DEBUG Apple] Env Vars - ClientID: ${clientId}, TeamID: ${teamId}, KeyID: ${keyId}, PrivateKey: ${privateKey ? 'Present (' + privateKey.length + ' chars)' : 'Missing'}`);
+
+    // EXPLICIT CHECK FOR VARIABLES
+    if (!clientId) throw new Error("APPLE_CLIENT_ID is missing from server env");
+    if (!teamId) throw new Error("APPLE_TEAM_ID is missing from server env");
+    if (!keyId) throw new Error("APPLE_KEY_ID is missing from server env");
+    if (!privateKey) throw new Error("APPLE_PRIVATE_KEY is missing from server env");
+
+    // Check if APPLE_PRIVATE_KEY is a file path (or we find the local file)
+    if (privateKey.endsWith('.p8') || privateKey.endsWith('.pem')) {
+      try {
+        const filePath = path.resolve(process.cwd(), privateKey);
+        privateKey = fs.readFileSync(filePath, 'utf8');
+        console.log(`[DEBUG Apple] Loaded private key from file: ${filePath}`);
+      } catch (err) {
+        throw new Error(`Failed to read key file at ${privateKey}: ${err.message}`);
+      }
+    } else {
+      // Look for a local AuthKey file automatically as fallback if it doesn't look like a key
+      if (!privateKey.includes('-----BEGIN')) {
+        const fallbackPath = path.resolve(process.cwd(), 'AuthKey_N9366H7UY2.p8');
+        if (fs.existsSync(fallbackPath)) {
+          privateKey = fs.readFileSync(fallbackPath, 'utf8');
+          console.log(`[DEBUG Apple] Loaded private key from fallback local file: ${fallbackPath}`);
+        }
+      }
+    }
+
+    // Clean up private key (handle quotes, escaped newlines, or flat spaces from Cloud Run)
+    privateKey = privateKey.trim();
+    if (privateKey.startsWith('"') && privateKey.endsWith('"')) {
+      privateKey = privateKey.substring(1, privateKey.length - 1);
+    }
+    
+    if (privateKey.includes('BEGIN PRIVATE KEY')) {
+      // Robust re-builder: strip EVERYTHING then chunk it out cleanly.
+      // This protects against bad copy/pasting in Google Cloud Run where space might be injected instead of newline.
+      let base64Data = privateKey
+        .replace(/-----BEGIN PRIVATE KEY-----/g, '')
+        .replace(/-----END PRIVATE KEY-----/g, '')
+        .replace(/\\n/g, '') // remove escaped newlines
+        .replace(/\s+/g, ''); // remove all actual spaces and newlines
+
+      let formattedKey = '-----BEGIN PRIVATE KEY-----\n';
+      for (let i = 0; i < base64Data.length; i += 64) {
+          formattedKey += base64Data.substring(i, i + 64) + '\n';
+      }
+      formattedKey += '-----END PRIVATE KEY-----';
+      privateKey = formattedKey;
+    } else {
+      console.error(`[DEBUG Apple] Invalid key prefix: ${privateKey.substring(0, 30)}...`);
+      throw new Error("APPLE_PRIVATE_KEY format is invalid (missing BEGIN header). Ensure the .p8 file exists or content is correct.");
+    }
+
+    let finalIdToken = bodyIdToken;
+
+    // 1. If we have a code, exchange it for tokens (this is the standard web flow)
+    if (code) {
+      console.log(`[DEBUG Apple] Attempting code exchange...`);
+      try {
+        const clientSecret = appleSignin.getClientSecret({
+          clientID: clientId,
+          teamID: teamId,
+          keyIdentifier: keyId,
+          privateKey: privateKey,
+        });
+        
+        console.log(`[DEBUG Apple] Client Secret generated successfully.`);
+
+        const tokenResponse = await appleSignin.getAuthorizationToken(code, {
+          clientID: clientId,
+          clientSecret: clientSecret,
+          redirectUri: `${process.env.BACKEND_URL || 'http://localhost:8080'}/api/auth/apple/callback`,
+        });
+
+        console.log(`[DEBUG Apple] Token Exchange successful. ID Token present: ${!!tokenResponse.id_token}`);
+
+        if (tokenResponse.id_token) {
+          finalIdToken = tokenResponse.id_token;
+        }
+      } catch (clientErr) {
+        console.error(`[Apple Client Secret/Exchange Error]:`, clientErr.message);
+        throw new Error(`Failed to exchange Apple code: ${clientErr.message}`);
+      }
+    }
+
+    if (!finalIdToken) {
+      throw new Error("No ID Token received from Apple in body or via exchange.");
+    }
+
+    // 2. Verify the ID Token (either from body or from exchange)
+    const verifiedToken = await appleSignin.verifyIdToken(finalIdToken, {
+      audience: clientId,
+      ignoreExpiration: false,
+    });
+
+    const { sub: providerId, email } = verifiedToken;
+
+    let name = '';
+    if (userJson) {
+      const userData = JSON.parse(userJson);
+      if (userData.name) {
+        name = `${userData.name.firstName || ''} ${userData.name.lastName || ''}`.trim();
+      }
+    }
+
+    const profile = {
+      provider: 'apple',
+      providerId,
+      email: email,
+      name: name || email.split('@')[0],
+      picture: `https://ui-avatars.com/api/?name=${encodeURIComponent(name || 'Apple User')}&background=000&color=fff`
+    };
+
+    return handleSocialUser(profile, res);
+
+  } catch (err) {
+    console.error(`[Apple Auth Overall Error]:`, err.message);
+    const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+    return res.redirect(`${frontendUrl}/login?error=${encodeURIComponent("Apple login failed: " + err.message)}`);
+  }
 });
 
 router.get("/twitter", (req, res) => {

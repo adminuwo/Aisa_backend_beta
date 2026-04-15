@@ -44,8 +44,8 @@ const KnowledgeSourceSchema = new mongoose.Schema({
     },
     category: {
         type: String,
-        enum: ['LEGAL', 'GENERAL'],
-        default: 'LEGAL'
+        enum: ['LEGAL', 'GENERAL', 'FINANCE'],
+        default: 'GENERAL'
     }
 }, { timestamps: true });
 

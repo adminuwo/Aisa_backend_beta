@@ -12,7 +12,7 @@ import emailVerification from "./routes/emailVerification.js"
 import userRoute from './routes/user.js'
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { Server } from 'socket.io';
+import { initSocket } from './utils/socket.js';
 import * as stockService from './services/stockService.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -49,9 +49,9 @@ import brandRoutes from './routes/brandFetch.route.js';
 import cashflowRoutes from './routes/cashflowRoutes.js';
 import stockRoutes from './routes/stockRoutes.js';
 import legalToolkitRoutes from './routes/legalToolkitRoutes.js';
+import connectorsRoutes from './routes/connectors.routes.js';
 import storageRoutes from './routes/storage.routes.js';
-
-// import { startPlanExpiryService } from './services/planExpiryService.js';
+import { startPlanExpiryService } from './services/planExpiryService.js';
 
 // End of standard imports
 
@@ -79,6 +79,10 @@ connectDB().then(async () => {
     // Initialize Multi Schedule Reminder System
     const { initReminderScheduler } = await import('./services/reminderScheduler.js');
     initReminderScheduler();
+
+    // Initialize Plan Expiry Notification System
+    startPlanExpiryService();
+
 
   } catch (err) {
     console.error("❌ Failed to pre-initialize AI services:", err.message);
@@ -149,6 +153,7 @@ app.use('/api/feedback', feedbackRoutes);
 app.use('/api/support', supportRoutes);
 app.use('/api/personal-assistant', personalTaskRoutes);
 app.use('/api/memory', memoryRoutes);
+app.use('/api/connectors', connectorsRoutes);
 
 // Business & Dashboard
 app.use('/api/pricing', pricingRoutes);
@@ -166,9 +171,6 @@ app.use('/api/brand', brandRoutes);
 
 // Admin Panel (Admin only)
 app.use('/api/admin', adminRoutes);
-
-// Storage Proxy (for private GCS assets)
-app.use('/api/storage', storageRoutes);
 
 // Projects
 app.use('/api/projects', projectRoutes);
@@ -212,51 +214,39 @@ const server = app.listen(PORT, () => {
   console.log(`AISA Backend running on http://localhost:${PORT}`);
 });
 
-// --- WebSockets for Market Data ---
-const io = new Server(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
-  }
-});
+// --- WebSockets ---
+const io = initSocket(server);
 
 const activeRealtimeSubscriptions = new Map(); // socket.id -> { symbol, intervalId }
 
 io.on('connection', (socket) => {
-  console.log(`[Socket] Client connected: ${socket.id}`);
-
-  // Handle Realtime Subscription
+  // Existing Market Data Logic (Kept for compatibility)
   socket.on('subscribe_realtime', async ({ symbol }) => {
     console.log(`[Socket] ${socket.id} subscribed to realtime: ${symbol}`);
     
-    // Clear previous subscription if it exists
     if (activeRealtimeSubscriptions.has(socket.id)) {
         clearInterval(activeRealtimeSubscriptions.get(socket.id).intervalId);
     }
 
-    // Immediately fetch and emit once
     try {
         const initialData = await stockService.getQuote(symbol);
         socket.emit('realtime_update', { quote: initialData });
     } catch (err) {}
 
-    // Simulated websocket streaming (polling backend API)
     const intervalId = setInterval(async () => {
         try {
             const data = await stockService.getQuote(symbol);
             if (data) {
-                // Sent exact price without any artificial jitter
                 socket.emit('realtime_update', { quote: data });
             }
         } catch (error) {
             console.error(`[Socket] Live fetch error for ${symbol}:`, error.message);
         }
-    }, 2000); // 2-second ticks over WebSocket
+    }, 2000);
 
     activeRealtimeSubscriptions.set(socket.id, { symbol, intervalId });
   });
 
-  // Handle Historical Request
   socket.on('request_historical', async ({ symbol }) => {
     console.log(`[Socket] ${socket.id} requested historical data for: ${symbol}`);
     try {
@@ -268,13 +258,13 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
-    console.log(`[Socket] Client disconnected: ${socket.id}`);
     if (activeRealtimeSubscriptions.has(socket.id)) {
         clearInterval(activeRealtimeSubscriptions.get(socket.id).intervalId);
         activeRealtimeSubscriptions.delete(socket.id);
     }
   });
 });
+
 
 server.timeout = 900000; // 15 mins
 

@@ -1,5 +1,5 @@
 /**
- * Web Search Utility for AISA
+ * Web Search Utility for AISA™
  * Handles intelligent web search decision logic and result processing
  */
 
