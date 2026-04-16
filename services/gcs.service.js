@@ -15,31 +15,16 @@ let storage;
 let bucket;
 
 try {
-    const auth = new GoogleAuth({
-        scopes: [
-            'https://www.googleapis.com/auth/cloud-platform',
-            'https://www.googleapis.com/auth/iam'
-        ]
-    });
-
-    const impersonatedClient = new Impersonated({
-        sourceClient: auth,
-        targetPrincipal: TARGET_PRINCIPAL,
-        lifetime: 3600,
-        delegates: [],
-        targetScopes: [
-            'https://www.googleapis.com/auth/cloud-platform',
-            'https://www.googleapis.com/auth/devstorage.full_control'
-        ]
-    });
-
+    process.env.GOOGLE_CLOUD_UNIVERSE_DOMAIN = 'googleapis.com';
     storage = new Storage({ 
         projectId: process.env.GCP_PROJECT_ID || 'ai-mall-484810',
-        authClient: impersonatedClient
+        universe_domain: 'googleapis.com',
+        // Optional: Explicity use IAM credentials API for signing if ADC cannot natively sign
+        // impersonatedServiceAccount: TARGET_PRINCIPAL 
     });
     
     bucket = storage.bucket(BUCKET_NAME);
-    logger.info(`[GCS] Impersonated storage initialized for ${TARGET_PRINCIPAL}`);
+    logger.info(`[GCS] Storage initialized with ADC explicitly configured for universe_domain`);
 } catch (error) {
     logger.error(`[GCS] Failed to initialize storage: ${error.message}`);
 }

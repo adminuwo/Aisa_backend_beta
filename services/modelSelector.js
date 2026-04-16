@@ -33,20 +33,20 @@ export const selectImageModel = (requestedModelId, quality = 'fast', isPremium =
     
     if (requestedModelId && knownModels.includes(requestedModelId)) {
         // Restrict pro models to premium users
-        const premiumModels = ['gemini-3-pro-image-preview'];
-        if (premiumModels.includes(requestedModelId) && !isPremium) {
-            logger.warn(`[ModelSelector] Premium model ${requestedModelId} requested by non-premium user, downgrading to Standard`);
-            return 'gemini-3.1-flash-image-preview';
-        }
+        // const premiumModels = ['gemini-3-pro-image-preview'];
+        // if (premiumModels.includes(requestedModelId) && !isPremium) {
+        //     logger.warn(`[ModelSelector] Premium model ${requestedModelId} requested by non-premium user, downgrading to Standard`);
+        //     return 'gemini-3.1-flash-image-preview';
+        // }
         return requestedModelId;
     }
 
     // Auto-select based on quality hint
     const selected = modelMap[quality] || modelMap.fast;
-    if (quality === 'ultra' && !isPremium) {
-        logger.warn('[ModelSelector] Ultra quality requested by free user, using quality tier');
-        return modelMap.quality;
-    }
+    // if (quality === 'ultra' && !isPremium) {
+    //     logger.warn('[ModelSelector] Ultra quality requested by free user, using quality tier');
+    //     return modelMap.quality;
+    // }
 
     logger.info(`[ModelSelector] Auto-selected image model: ${selected} (quality=${quality}, premium=${isPremium})`);
     return selected;
@@ -68,14 +68,14 @@ export const selectVideoModel = (requestedModelId, quality = 'fast', isPremium =
     const knownModels = ['veo-3.1-fast-generate-001', 'veo-3.1-generate-001'];
     if (requestedModelId && knownModels.includes(requestedModelId)) {
         // Cinema/Pro model is premium-only
-        if (requestedModelId === 'veo-3.1-generate-001' && !isPremium) {
-            logger.warn('[ModelSelector] Cinema model requested by non-premium user, downgrading to Fast');
-            return 'veo-3.1-fast-generate-001';
-        }
+        // if (requestedModelId === 'veo-3.1-generate-001' && !isPremium) {
+        //     logger.warn('[ModelSelector] Cinema model requested by non-premium user, downgrading to Fast');
+        //     return 'veo-3.1-fast-generate-001';
+        // }
         return requestedModelId;
     }
 
-    const selected = isPremium && quality === 'cinema'
+    const selected = quality === 'cinema'
         ? modelMap.cinema
         : modelMap.fast;
 
