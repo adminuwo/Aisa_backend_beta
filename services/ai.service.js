@@ -157,7 +157,16 @@ ProjectRoot/
 - CLEAN OUTPUT: Provide the unified Directory Tree first, and then sequentially provide the bold file name followed by its complete code block for every file.
 `;
         } else if (isActuallyConvertMode) {
-            toolRestrictions = "\n\n### MODE: FILE CONVERSION ENABLED. You can extract data or convert between formats.";
+            toolRestrictions = `
+\n\n### MODE: FILE CONVERSION ENABLED. 
+You can convert documents between formats (PDF to DOCX, DOCX to PDF). 
+To perform a conversion, you MUST respond with a JSON action strictly in this format:
+{
+  "action": "file_conversion",
+  "source_format": "docx",
+  "target_format": "pdf"
+}
+Maintain any text response outside the JSON block.`;
         } else if (mode === 'LEGAL_TOOLKIT') {
             toolRestrictions = `\n\n### MODE: LEGAL SYSTEM ACTIVE — STRICT DOMAIN LOCK ⚖️
 - You are a Senior Legal Assistant specialist EXCLUSIVELY for legal matters.
