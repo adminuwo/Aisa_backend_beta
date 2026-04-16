@@ -1,5 +1,6 @@
-import mongoose from "mongoose";
 import express from "express";
+import mongoose from "mongoose";
+import { v4 as uuidv4 } from "uuid";
 import ChatSession from "../models/ChatSession.js";
 import { generativeModel, genAIInstance, modelName as primaryModelName } from "../config/vertex.js";
 import userModel from "../models/User.js";
@@ -605,6 +606,121 @@ router.delete('/:sessionId', optionalVerifyToken, identifyGuest, async (req, res
     res.json({ message: 'History cleared' });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+ 
+// --- SHARE SESSION ---
+router.post('/:sessionId/share', optionalVerifyToken, identifyGuest, async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const userId = req.user?.id;
+    const guestId = req.guest?.guestId;
+ 
+    const session = await ChatSession.findOne({ sessionId });
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+ 
+    // Ownership check
+    if (userId) {
+      if (session.userId && session.userId.toString() !== userId) return res.status(403).json({ error: 'Access denied' });
+    } else if (guestId) {
+      if (session.guestId !== guestId) return res.status(403).json({ error: 'Access denied' });
+    }
+ 
+    if (!session.shareId) {
+      session.shareId = uuidv4();
+    }
+    session.isShared = true;
+    await session.save();
+ 
+    res.json({ success: true, shareId: session.shareId });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to share session' });
+  }
+});
+ 
+// --- DUPLICATE SHARED SESSION ---
+router.post('/duplicate', optionalVerifyToken, identifyGuest, async (req, res) => {
+  try {
+    const { shareId } = req.body;
+    const userId = req.user?.id || req.body.userId; // Fallback to body userId if token missing
+    const guestId = req.guest?.guestId;
+
+    console.log(`[DUPLICATE REQUEST] shareId: ${shareId}, userId: ${userId}`);
+
+    if (!shareId) return res.status(400).json({ error: 'shareId is required' });
+
+    // Find the source session
+    const sourceSession = await ChatSession.findOne({ shareId, isShared: true });
+    if (!sourceSession) {
+      console.warn(`[DUPLICATE] Source chat not found for shareId: ${shareId}`);
+      return res.status(404).json({ error: 'Source chat not found' });
+    }
+
+    // Create a new session for the current user/guest
+    const newSessionId = uuidv4();
+    
+    // Safety check for messages
+    const messagesToClone = Array.isArray(sourceSession.messages) ? sourceSession.messages : [];
+    
+    // Copy and transform messages
+    const clonedMessages = messagesToClone.map(m => ({
+      id: uuidv4(),
+      role: m.role || 'assistant',
+      content: m.content || m.text || " ", // Ensure non-empty string for required field
+      timestamp: Date.now(),
+      mode: m.mode,
+      isRealTime: m.isRealTime || false,
+      sources: m.sources || [],
+      attachments: m.attachments || []
+    }));
+
+    const newSession = new ChatSession({
+      sessionId: newSessionId,
+      userId: userId || null,
+      guestId: userId ? null : (guestId || uuidv4()),
+      title: sourceSession.title || 'New Chat',
+      projectId: sourceSession.projectId || null,
+      messages: clonedMessages,
+      detectedMode: sourceSession.detectedMode || 'NORMAL_CHAT',
+      lastModified: Date.now()
+    });
+
+    await newSession.save();
+
+    // If user is logged in, link to their profile
+    if (userId && mongoose.Types.ObjectId.isValid(userId)) {
+      await userModel.findByIdAndUpdate(userId, { $push: { chatSessions: newSession._id } });
+    }
+
+    console.log(`[DUPLICATE] Success: ${shareId} -> ${newSessionId} (${clonedMessages.length} messages)`);
+    res.json({ success: true, sessionId: newSessionId });
+  } catch (err) {
+    console.error("[DUPLICATE ERROR]", err);
+    res.status(500).json({ error: 'Failed to duplicate chat', details: err.message });
+  }
+});
+
+// --- GET SHARED SESSION (PUBLIC) ---
+router.get('/public/share/:shareId', async (req, res) => {
+  try {
+    const { shareId } = req.params;
+ 
+    const session = await ChatSession.findOne({ shareId, isShared: true });
+    if (!session) return res.status(404).json({ error: 'Shared chat not found or no longer public' });
+ 
+    // Return only necessary fields for public view
+    const publicSession = {
+      title: session.title,
+      messages: session.messages,
+      lastModified: session.lastModified,
+      detectedMode: session.detectedMode
+    };
+ 
+    res.json(publicSession);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch shared chat' });
   }
 });
 

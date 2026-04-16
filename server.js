@@ -135,6 +135,7 @@ app.use('/api/legal-toolkit', legalToolkitRoutes);
 
 // Intelligence Features
 app.use('/api/chat', chatRoutes);
+app.use('/api', chatRoutes); // Allow /api/public/share/... to work via chatRoutes
 app.use('/api/agents', agentRoutes);
 app.use('/api/voice', voiceRoutes);
 app.use('/api/image', imageRoutes);
