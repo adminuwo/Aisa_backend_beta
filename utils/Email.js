@@ -76,7 +76,7 @@ export const sendFeedbackEmail = async (feedback) => {
     const isUp = feedback.type === 'thumbs_up';
     const response = await resend.emails.send({
       from: `AISA™ Feedback <${process.env.EMAIL}>`,
-      to: [process.env.ADMIN_EMAIL || 'admin@aisa24.com'],
+      to: ['admin@uwo24.com'],
       subject: `📢 New Feedback: ${isUp ? 'Positive' : 'Negative'}`,
       html: `
         <div style="font-family: sans-serif; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
