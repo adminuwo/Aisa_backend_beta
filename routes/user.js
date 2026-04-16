@@ -7,6 +7,7 @@ import { verifyToken } from "../middleware/authorization.js"
 import { getSmartAvatar, isGeneratedAvatar } from "../utils/avatarHelper.js";
 import uploadMiddleware from "../middlewares/upload.middleware.js";
 import { uploadToGCS, gcsFilename } from "../services/gcs.service.js";
+import { uploadToCloudinary } from "../services/cloudinary.service.js";
 
 const route = express.Router()
 
@@ -184,16 +185,40 @@ route.post("/avatar", verifyToken, uploadMiddleware, async (req, res) => {
             return res.status(400).json({ error: "No file uploaded" });
         }
 
-        const ext = req.file.originalname.split('.').pop() || 'png';
-        const gcsResult = await uploadToGCS(req.file.buffer, {
-            folder: 'user_avatars',
-            filename: gcsFilename(`avatar_${req.user.id || req.user._id}`, ext),
-            mimeType: req.file.mimetype,
-        });
+        let avatarUrl = null;
+
+        // Strategy 1: Try GCS (Production)
+        try {
+            const ext = req.file.originalname.split('.').pop() || 'png';
+            const gcsResult = await uploadToGCS(req.file.buffer, {
+                folder: 'user_avatars',
+                filename: gcsFilename(`avatar_${req.user.id || req.user._id}`, ext),
+                mimeType: req.file.mimetype,
+            });
+            avatarUrl = gcsResult.publicUrl;
+            console.log("[AVATAR] Uploaded via GCS successfully.");
+        } catch (gcsError) {
+            console.warn("[AVATAR] GCS upload failed, falling back to Cloudinary:", gcsError.message);
+
+            // Strategy 2: Fallback to Cloudinary
+            try {
+                const cloudinaryResult = await uploadToCloudinary(req.file.buffer, {
+                    folder: 'user_avatars',
+                    public_id: `avatar_${req.user.id || req.user._id}_${Date.now()}`,
+                    resource_type: 'image',
+                    overwrite: true,
+                });
+                avatarUrl = cloudinaryResult.secure_url || cloudinaryResult.url;
+                console.log("[AVATAR] Uploaded via Cloudinary successfully.");
+            } catch (cloudinaryError) {
+                console.error("[AVATAR] Cloudinary fallback also failed:", cloudinaryError.message);
+                throw new Error("All upload services failed. GCS: " + gcsError.message + " | Cloudinary: " + cloudinaryError.message);
+            }
+        }
 
         const user = await userModel.findByIdAndUpdate(
             req.user.id || req.user._id,
-            { avatar: gcsResult.publicUrl },
+            { avatar: avatarUrl },
             { new: true }
         ).select("-password");
 

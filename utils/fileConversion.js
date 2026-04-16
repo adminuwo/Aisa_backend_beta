@@ -168,9 +168,14 @@ export async function convertDocxToPdf(docxBuffer) {
             .replace(/[\u2018\u2019]/g, "'") // Smart single quotes
             .replace(/[\u201C\u201D]/g, '"') // Smart double quotes
             .replace(/[\u2014\u2015]/g, '--') // Em dashes
-            .replace(/\u2013/g, '-') // En dash
+            .replace(/[\u2010\u2011\u2012\u2013]/g, '-') // Various dashes
+            .replace(/\u2022/g, '*') // Bullet point to asterisk
             .replace(/\u2026/g, '...') // Ellipsis
             .replace(/\u00A0/g, ' '); // Non-breaking space
+
+        // Final safety: Remove all characters that standard Helvetica (WinAnsi) definitely cannot encode
+        // This includes Hindi, emojis, and special math symbols.
+        text = text.replace(/[^\x00-\x7F\u00A0-\u00FF]/g, '?');
 
         const pdfDoc = await PDFDocument.create();
         const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
@@ -206,11 +211,7 @@ export async function convertDocxToPdf(docxBuffer) {
                 }
 
                 try {
-                    // Filter out unrenderable characters just before drawing
-                    // Helvetica only supports WinAnsi. Hindi will still show as '?'
-                    // but at least English punctuation will be correct.
-                    const pdsafeLine = line.replace(/[^\x20-\x7E\u00A0-\u00FF]/g, '?');
-                    page.drawText(pdsafeLine, {
+                    page.drawText(line, {
                         x: margin,
                         y: yPosition,
                         size: fontSize,
@@ -218,8 +219,7 @@ export async function convertDocxToPdf(docxBuffer) {
                         color: rgb(0, 0, 0),
                     });
                 } catch (drawError) {
-                    const fallbackLine = line.replace(/[^\x00-\x7F]/g, '?');
-                    page.drawText(fallbackLine, { x: margin, y: yPosition, size: fontSize, font: font });
+                    console.warn('[PDF Draw Error]', drawError.message);
                 }
                 yPosition -= lineHeight;
             }
