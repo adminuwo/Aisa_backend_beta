@@ -309,3 +309,61 @@ export const sendCashFlowReport = async (userEmail, userName, stockData, analysi
         return { success: false, message: error.message };
     }
 };
+
+/**
+ * Send Shared Chat Link Email
+ */
+export const sendShareLinkEmail = async (targetEmail, shareLink, sessionTitle, senderName = "A user") => {
+    const transporter = createTransporter();
+    if (!transporter) {
+        console.warn('[EMAIL SERVICE] Transporter not configured, skipping email');
+        return { success: false, message: 'Email service not configured' };
+    }
+
+    const mailOptions = {
+        from: EMAIL_CONFIG.user,
+        to: targetEmail,
+        subject: `🔗 Shared AISA Chat: ${sessionTitle}`,
+        html: `
+            <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+                <div style="background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); padding: 30px; text-align: center; color: white;">
+                    <h1 style="margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.025em;">AISA Intelligence</h1>
+                    <p style="margin: 8px 0 0; opacity: 0.9; font-size: 14px;">Conversation Shared With You</p>
+                </div>
+
+                <div style="padding: 40px 30px; text-align: center;">
+                    <div style="width: 60px; height: 60px; background: #f5f3ff; border-radius: 20px; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 24px;">
+                        <span style="font-size: 30px;">💬</span>
+                    </div>
+                    
+                    <h2 style="color: #1e293b; margin: 0 0 12px; font-size: 20px; font-weight: 700;">${sessionTitle}</h2>
+                    <p style="color: #64748b; margin: 0 0 32px; line-height: 1.6; font-size: 15px;">
+                        ${senderName} has shared an interesting AI conversation with you on AISA. Click the button below to view the full chat history.
+                    </p>
+
+                    <a href="${shareLink}" style="display: inline-block; background: #6366f1; color: white; padding: 16px 36px; text-decoration: none; border-radius: 12px; font-weight: 700; font-size: 15px; box-shadow: 0 10px 15px -3px rgba(99, 102, 241, 0.3);">View Conversation</a>
+                    
+                    <div style="margin-top: 32px; padding-top: 32px; border-top: 1px solid #f1f5f9;">
+                        <p style="color: #94a3b8; font-size: 13px; margin: 0;">
+                            Don't have an account? <a href="https://aisa24.com" style="color: #6366f1; text-decoration: none; font-weight: 600;">Get started with AISA</a>
+                        </p>
+                    </div>
+                </div>
+
+                <div style="background: #f8fafc; padding: 20px; text-align: center; color: #94a3b8; font-size: 12px;">
+                    <p style="margin: 0;">&copy; ${new Date().getFullYear()} AISA Intelligence Platform</p>
+                    <p style="margin: 4px 0 0;">This is an automated share notification based on a user request.</p>
+                </div>
+            </div>
+        `
+    };
+
+    try {
+        await transporter.sendMail(mailOptions);
+        return { success: true };
+    } catch (error) {
+        console.error('[EMAIL SERVICE] Failed to send share link:', error);
+        return { success: false, error: error.message };
+    }
+};
+
