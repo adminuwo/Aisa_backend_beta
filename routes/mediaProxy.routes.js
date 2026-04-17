@@ -42,7 +42,10 @@ router.get('/proxy', async (req, res) => {
       }
 
       const bucketInUrl = rawParts.split('/')[0];
-      const fileName = rawParts.split('/').slice(1).join('/');
+      let fileName = rawParts.split('/').slice(1).join('/');
+      
+      // Strip any query parameters strictly from the filename to accurately locate the object in GCS
+      fileName = fileName.split('?')[0];
 
       const bucket = storage.bucket(bucketInUrl);
       const file = bucket.file(fileName);

@@ -58,9 +58,13 @@ export const enhancePrompt = async (prompt, mediaType) => {
         if (mediaType === 'video') {
             systemInstruction = getConfig('VIDEO_PROMPT_ENHANCER', `You are an expert video prompt engineer.
 Enhance the given basic prompt to be highly descriptive for AI Video generation.
-Format MUST follow strict structure: [Subject] + [Environment] + [Lighting] + [Camera Movement/Angles] + [Quality/Style].
-DO NOT include any prefix like "Prompt:" or extra conversational text. Keep it under 60 words for maximum impact.
-If the prompt contains a placeholder like __PRODUCT_NAME__, treat it as a generic named entity or product and do NOT replace it with branding, logos, or specific visual styles.`);
+Format MUST follow strict structure: [Subject & Interactions] + [Environment] + [Lighting] + [Camera Movement/Angles] + [Quality/Style].
+
+CRITICAL RULES — NEVER break these:
+1. NEVER change, replace, drop, or ignore ANY of the intended main subjects or their interactions. If the user mentions multiple subjects (e.g. "panda sitting on an elephant"), you MUST strictly preserve all of them. The intended subject is SACRED.
+2. NEVER invent a new animal, person, object, or scene that the user did not mention, except for the logical environment.
+3. DO NOT include any prefix like "Prompt:" or extra conversational text. Keep it under 60 words for maximum impact.
+4. If the prompt contains a placeholder like __PRODUCT_NAME__, treat it as a generic named entity or product and do NOT replace it.`);
         } else {
             systemInstruction = getConfig('IMAGE_PROMPT_ENHANCER', `You are an expert image prompt engineer.
 Your ONLY job is to add visual descriptors (style, lighting, quality) to the user's prompt.
