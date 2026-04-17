@@ -72,7 +72,9 @@ const chatSessionSchema = new mongoose.Schema({
   },
   messages: [messageSchema],
   lastModified: { type: Number, default: Date.now },
-  detectedMode: { type: String, default: 'NORMAL_CHAT' }
+  detectedMode: { type: String, default: 'NORMAL_CHAT' },
+  isShared: { type: Boolean, default: false },
+  shareId: { type: String, unique: true, sparse: true, index: true }
 }, { timestamps: true });
 const ChatSession = mongoose.model('ChatSession', chatSessionSchema);
 export default ChatSession

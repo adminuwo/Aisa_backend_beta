@@ -40,7 +40,7 @@ export const chat = async (req, res, next) => {
             userId: req.user?.id || req.user?._id
         });
 
-        const { text: responseText, isRealTime, sources } = chatResponse;
+        const { text: responseText, isRealTime, sources, suggestions } = chatResponse;
 
 
         // 2. Persist to DB
@@ -71,7 +71,8 @@ export const chat = async (req, res, next) => {
             role: 'assistant',
             text: responseText,
             isRealTime: isRealTime || false,
-            sources: sources || []
+            sources: sources || [],
+            suggestions: suggestions || []
         });
         conversation.lastMessageAt = Date.now();
         await conversation.save();
@@ -86,6 +87,7 @@ export const chat = async (req, res, next) => {
             data: responseText,
             isRealTime: isRealTime || false,
             sources: sources || [],
+            suggestions: suggestions || [],
             conversationId: conversation._id,
             title: conversation.title
         });

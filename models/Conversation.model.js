@@ -28,6 +28,7 @@ const ConversationSchema = new mongoose.Schema({
             title: String,
             url: String
         }],
+        suggestions: [String],
         timestamp: {
             type: Date,
             default: Date.now

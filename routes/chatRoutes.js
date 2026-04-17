@@ -1,5 +1,6 @@
-import mongoose from "mongoose";
 import express from "express";
+import mongoose from "mongoose";
+import { v4 as uuidv4 } from "uuid";
 import ChatSession from "../models/ChatSession.js";
 import { generativeModel, genAIInstance, modelName as primaryModelName } from "../config/vertex.js";
 import userModel from "../models/User.js";
@@ -378,7 +379,7 @@ router.get('/', optionalVerifyToken, identifyGuest, async (req, res) => {
 router.get('/:sessionId', optionalVerifyToken, identifyGuest, async (req, res) => {
   try {
     const { sessionId } = req.params;
-    const userId = req.user?.id;
+    const userId = req.user?.id || req.user?._id;
     const guestId = req.guest?.guestId;
 
     if (mongoose.connection.readyState !== 1) return res.json({ sessionId, messages: [] });
@@ -388,14 +389,24 @@ router.get('/:sessionId', optionalVerifyToken, identifyGuest, async (req, res) =
 
     // Ownership check
     if (userId) {
-      if (session.userId && session.userId.toString() !== userId) return res.status(403).json({ error: "Access denied" });
+      const currentUserId = userId.toString();
+      if (session.userId && session.userId.toString() !== currentUserId) {
+        console.warn(`[AUTH] Access denied for user ${currentUserId} on session ${sessionId} owned by ${session.userId}`);
+        return res.status(403).json({ error: "Access denied" });
+      }
+      
+      // Auto-claim unowned sessions if logged in
       if (!session.userId) {
+        console.log(`[AUTH] User ${currentUserId} claiming unowned guest session ${sessionId}`);
         session.userId = userId;
         await session.save();
         await userModel.findByIdAndUpdate(userId, { $addToSet: { chatSessions: session._id } });
       }
     } else if (guestId) {
-      if (session.guestId !== guestId) return res.status(403).json({ error: 'Access denied' });
+      if (session.guestId && session.guestId !== guestId) {
+         console.warn(`[AUTH] Access denied for guest ${guestId} on session ${sessionId} owned by guest ${session.guestId}`);
+         return res.status(403).json({ error: 'Access denied' });
+      }
     }
 
     if (session) {
@@ -493,9 +504,12 @@ router.post('/:sessionId/message', optionalVerifyToken, identifyGuest, async (re
     } else {
       // Ownership check for existing session
       if (userId) {
-        if (session.userId && session.userId.toString() !== userId) return res.status(403).json({ error: 'Access denied' });
+        const currentUserId = userId.toString();
+        if (session.userId && session.userId.toString() !== currentUserId) {
+          return res.status(403).json({ error: 'Access denied' });
+        }
       } else if (guestId) {
-        if (session.guestId !== guestId) return res.status(403).json({ error: 'Access denied' });
+        if (session.guestId && session.guestId !== guestId) return res.status(403).json({ error: 'Access denied' });
       }
     }
 
@@ -605,6 +619,179 @@ router.delete('/:sessionId', optionalVerifyToken, identifyGuest, async (req, res
     res.json({ message: 'History cleared' });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+ 
+// --- SHARE SESSION ---
+router.post('/:sessionId/share', optionalVerifyToken, identifyGuest, async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const userId = req.user?.id || req.user?._id;
+    const guestId = req.guest?.guestId;
+ 
+    const session = await ChatSession.findOne({ sessionId });
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+ 
+    // Ownership check
+    if (userId) {
+      const currentUserId = userId.toString();
+      if (session.userId && session.userId.toString() !== currentUserId) {
+        console.warn(`[SHARE] Access denied for user ${currentUserId} on session ${sessionId} owned by ${session.userId}`);
+        return res.status(403).json({ error: 'Access denied' });
+      }
+      
+      // Auto-claim session if unowned
+      if (!session.userId) {
+        console.log(`[SHARE] User ${currentUserId} claiming unowned session ${sessionId} during share`);
+        session.userId = userId;
+        session.guestId = null; // Clean up guest ref
+      }
+    } else if (guestId) {
+      if (session.guestId && session.guestId !== guestId) {
+        console.warn(`[SHARE] Access denied for guest ${guestId} on session ${sessionId} owned by guest ${session.guestId}`);
+        return res.status(403).json({ error: 'Access denied' });
+      }
+    }
+ 
+    if (!session.shareId) {
+      session.shareId = uuidv4();
+    }
+    session.isShared = true;
+    await session.save();
+ 
+    res.json({ success: true, shareId: session.shareId });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to share session' });
+  }
+});
+
+// --- SHARE SESSION VIA EMAIL (INTEGRATED) ---
+router.post('/:sessionId/share/email', optionalVerifyToken, identifyGuest, async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const { targetEmail, shareLink, title } = req.body;
+    const userId = req.user?.id || req.user?._id;
+    const guestId = req.guest?.guestId;
+
+    if (!targetEmail || !shareLink) {
+      return res.status(400).json({ error: 'Target email and share link are required' });
+    }
+
+    const session = await ChatSession.findOne({ sessionId });
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+
+    // Ownership check
+    if (userId) {
+      const currentUserId = userId.toString();
+      if (session.userId && session.userId.toString() !== currentUserId) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+    } else if (guestId) {
+      if (session.guestId && session.guestId !== guestId) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+    }
+
+    const { sendShareLinkEmail } = await import('../services/emailService.js');
+    const senderName = req.user?.name || "A user";
+    
+    const result = await sendShareLinkEmail(targetEmail, shareLink, title || session.title, senderName);
+    
+    if (result.success) {
+      res.json({ success: true, message: 'Share link sent successfully via email' });
+    } else {
+      res.status(500).json({ error: 'Failed to send email', details: result.error });
+    }
+  } catch (err) {
+    console.error('[EMAIL SHARE ERROR]', err);
+    res.status(500).json({ error: 'Shared email failed' });
+  }
+});
+
+ 
+// --- DUPLICATE SHARED SESSION ---
+router.post('/duplicate', optionalVerifyToken, identifyGuest, async (req, res) => {
+  try {
+    const { shareId } = req.body;
+    const userId = req.user?.id || req.body.userId; // Fallback to body userId if token missing
+    const guestId = req.guest?.guestId;
+
+    console.log(`[DUPLICATE REQUEST] shareId: ${shareId}, userId: ${userId}`);
+
+    if (!shareId) return res.status(400).json({ error: 'shareId is required' });
+
+    // Find the source session
+    const sourceSession = await ChatSession.findOne({ shareId, isShared: true });
+    if (!sourceSession) {
+      console.warn(`[DUPLICATE] Source chat not found for shareId: ${shareId}`);
+      return res.status(404).json({ error: 'Source chat not found' });
+    }
+
+    // Create a new session for the current user/guest
+    const newSessionId = uuidv4();
+    
+    // Safety check for messages
+    const messagesToClone = Array.isArray(sourceSession.messages) ? sourceSession.messages : [];
+    
+    // Copy and transform messages
+    const clonedMessages = messagesToClone.map(m => ({
+      id: uuidv4(),
+      role: m.role || 'assistant',
+      content: m.content || m.text || " ", // Ensure non-empty string for required field
+      timestamp: Date.now(),
+      mode: m.mode,
+      isRealTime: m.isRealTime || false,
+      sources: m.sources || [],
+      attachments: m.attachments || []
+    }));
+
+    const newSession = new ChatSession({
+      sessionId: newSessionId,
+      userId: userId || null,
+      guestId: userId ? null : (guestId || uuidv4()),
+      title: sourceSession.title || 'New Chat',
+      projectId: sourceSession.projectId || null,
+      messages: clonedMessages,
+      detectedMode: sourceSession.detectedMode || 'NORMAL_CHAT',
+      lastModified: Date.now()
+    });
+
+    await newSession.save();
+
+    // If user is logged in, link to their profile
+    if (userId && mongoose.Types.ObjectId.isValid(userId)) {
+      await userModel.findByIdAndUpdate(userId, { $push: { chatSessions: newSession._id } });
+    }
+
+    console.log(`[DUPLICATE] Success: ${shareId} -> ${newSessionId} (${clonedMessages.length} messages)`);
+    res.json({ success: true, sessionId: newSessionId });
+  } catch (err) {
+    console.error("[DUPLICATE ERROR]", err);
+    res.status(500).json({ error: 'Failed to duplicate chat', details: err.message });
+  }
+});
+
+// --- GET SHARED SESSION (PUBLIC) ---
+router.get('/public/share/:shareId', async (req, res) => {
+  try {
+    const { shareId } = req.params;
+ 
+    const session = await ChatSession.findOne({ shareId, isShared: true });
+    if (!session) return res.status(404).json({ error: 'Shared chat not found or no longer public' });
+ 
+    // Return only necessary fields for public view
+    const publicSession = {
+      title: session.title,
+      messages: session.messages,
+      lastModified: session.lastModified,
+      detectedMode: session.detectedMode
+    };
+ 
+    res.json(publicSession);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch shared chat' });
   }
 });
 
