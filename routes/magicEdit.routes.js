@@ -29,7 +29,7 @@ router.post('/', verifyToken, upload.single('image'), creditMiddleware, async (r
         const ALLOWED_EDIT_MODELS = [
             'gemini-3.1-flash-image-preview',
             'gemini-3-pro-image-preview',
-            'gemini-2.5-flash-image'
+            'gemini-1.5-flash-image'
         ];
         const selectedModel = ALLOWED_EDIT_MODELS.includes(model) ? model : 'gemini-3.1-flash-image-preview';
         console.log(`[Magic Image Edit] Using model: ${selectedModel}`);

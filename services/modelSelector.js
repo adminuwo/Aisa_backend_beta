@@ -20,7 +20,7 @@ import logger from '../utils/logger.js';
 export const selectImageModel = (requestedModelId, quality = 'fast', isPremium = false) => {
     const modelMap = {
         fast: 'gemini-3.1-flash-image-preview',
-        quality: 'gemini-2.5-flash-image',
+        quality: 'gemini-1.5-flash-image',
         ultra: 'gemini-3-pro-image-preview'
     };
 
@@ -28,7 +28,7 @@ export const selectImageModel = (requestedModelId, quality = 'fast', isPremium =
     const knownModels = [
         'gemini-3.1-flash-image-preview',
         'gemini-3-pro-image-preview',
-        'gemini-2.5-flash-image'
+        'gemini-1.5-flash-image'
     ];
     
     if (requestedModelId && knownModels.includes(requestedModelId)) {
