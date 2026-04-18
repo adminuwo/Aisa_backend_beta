@@ -45,8 +45,12 @@ router.post('/execute', verifyToken, creditMiddleware, async (req, res) => {
         const systemPrompt = getLegalPrompt(toolName);
 
         // 🔥 STEP 2: FORCE TOOL MODE (ALIGNED WITH DRAFT-FIRST WORKFLOW)
-        const isArgumentBuilder = toolName === 'legal_argument_builder';
-        const enforcedMessage = `🚨 TOOL MODE: ${toolName}
+        const isDraftMaker = toolName === 'legal_draft_maker';
+        const isFollowUp = conversationHistory && conversationHistory.length > 0;
+        
+        const enforcedMessage = isDraftMaker 
+            ? `${isFollowUp ? '📝 FOLLOW-UP DATA AND UPDATES FOR DRAFT:' : '⚖️ DRAFTING REQUEST:'}\n${message}` 
+            : `🚨 TOOL MODE: ${toolName}
 
 ### 🎯 TASK:
 ${message}
@@ -81,8 +85,8 @@ ${message}
         // 🔥 STEP 4: FINAL RESPONSE CLEAN + TOOL TAG
         let finalReply = responseData.reply.trim();
         
-        // 🏷️ ENSURE TOOL TAG EXISTS (UI FIX)
-        if (!finalReply.startsWith('**[ACTIVE TOOL:')) {
+        // 🏷️ ENSURE TOOL TAG EXISTS (UI FIX) - Skip for Draft Maker for clean PDF output
+        if (!isDraftMaker && !finalReply.startsWith('**[ACTIVE TOOL:')) {
             const toolDisplayName = tool.name || toolName;
             finalReply = `**[ACTIVE TOOL: ${toolDisplayName}]**\n\n` + finalReply;
         }

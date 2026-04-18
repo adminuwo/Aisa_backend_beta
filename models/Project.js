@@ -11,6 +11,29 @@ const projectSchema = new mongoose.Schema({
         ref: 'User',
         required: true,
         index: true
+    },
+    clientName: {
+        type: String,
+        trim: true,
+        default: ''
+    },
+    caseSummary: {
+        type: String,
+        trim: true,
+        default: ''
+    },
+    keyIssue: {
+        type: String,
+        trim: true,
+        default: ''
+    },
+    importantDates: [{
+        label: String,
+        date: Date
+    }],
+    isLegalCase: {
+        type: Boolean,
+        default: false
     }
 }, { 
     timestamps: true 

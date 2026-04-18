@@ -228,6 +228,21 @@ export const TOOL_REGISTRY = {
         emoji: '⚖️',
         modeKey: 'LEGAL_TOOLKIT'
     },
+    legal_my_case: {
+        name: 'My Case Assistant',
+        description: 'Personalized legal assistant for managing your specific case folders and history',
+        inputs: ['text', 'image', 'document'],
+        outputs: ['text'],
+        handler: 'legalToolkitRoutes',
+        endpoint: '/api/legal-toolkit/execute',
+        creditCost: 0,
+        isPremium: false,
+        requiresAssets: false,
+        dependencies: [],
+        isInternal: false,
+        emoji: '📁',
+        modeKey: 'LEGAL_TOOLKIT'
+    },
     legal_draft_maker: {
         name: 'Draft Maker',
         description: 'Generate full professional legal documents and contracts',

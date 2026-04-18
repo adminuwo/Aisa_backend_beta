@@ -338,28 +338,16 @@ export const AskVertexRaw = async (prompt, options = {}) => {
             return response.text;
         }
 
-        logger.warn('[AskVertexRaw] Unexpected response structure:', JSON.stringify(response).substring(0, 200));
+        logger.warn('[AskVertexRaw] Unexpected response structure. FinishReason:', response?.candidates?.[0]?.finishReason || 'N/A');
+        logger.debug('[AskVertexRaw] Full Response Object:', JSON.stringify(response));
         return '';
     } catch (err) {
         // Log full error details for debugging
         logger.error(`[AskVertexRaw] FULL ERROR: ${err.message}`);
         if (err.stack) logger.debug(`[AskVertexRaw] Stack Trace: ${err.stack}`);
-        if (err.response?.data) {
-            logger.error(`[AskVertexRaw] API Response Error: ${JSON.stringify(err.response.data)}`);
-            // Specific check for model not found - trigger fallback
-            if (JSON.stringify(err.response.data).includes("NOT_FOUND") && !options.isFallback) {
-                logger.warn("[AskVertexRaw] Primary model not found. Attempting fallback to gemini-1.5-flash...");
-                return AskVertexRaw(prompt, { ...options, modelOverride: 'gemini-1.5-flash', isFallback: true });
-            }
-        }
-        if (err.status) logger.error(`[AskVertexRaw] HTTP Status: ${err.status}`);
-        
-        // Final fallback if gemini-2.0-flash is specifically failing
-        if (err.message.includes("404") || err.message.includes("NOT_FOUND")) {
-             if (!options.isFallback) {
-                logger.warn("[AskVertexRaw] 404/NOT_FOUND error. Attempting fallback to gemini-1.5-flash...");
-                return AskVertexRaw(prompt, { ...options, modelOverride: 'gemini-1.5-flash', isFallback: true });
-             }
+        if ((err.message.includes("404") || err.message.includes("NOT_FOUND")) && !options.isFallback) {
+            logger.error(`[AskVertexRaw] Model ${options.modelOverride || modelName} not found. Please verify the model ID and region.`);
+            throw err;
         }
         
         throw err;
@@ -403,10 +391,10 @@ export const askVertex = async (prompt, context = null, options = {}) => {
             model = genAIInstance.getGenerativeModel({
                 model: selectedModelName,
                 safetySettings: [
-                    {
-                        category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-                        threshold: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE, // Allow some flexibility
-                    },
+                    { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+                    { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+                    { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+                    { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH }
                 ],
                 generationConfig: {
                     maxOutputTokens: 4096,
@@ -478,10 +466,10 @@ export const askVertex = async (prompt, context = null, options = {}) => {
         logger.error(`[VERTEX] Error: ${error.message}`);
         if (error.stack) logger.debug(`[VERTEX] Stack: ${error.stack}`);
         
-        // Fallback for model not found
+        // Specific error for model not found 
         if ((error.message.includes("404") || error.message.includes("NOT_FOUND")) && !options.isFallback) {
-            logger.warn(`[VERTEX] Primary model ${modelName} failed. Attempting fallback to gemini-1.5-flash...`);
-            return askVertex(prompt, context, { ...options, modelOverride: 'gemini-1.5-flash', isFallback: true });
+            logger.error(`[VERTEX] Model ${modelName} NOT_FOUND in region. Please verify model availability.`);
+            throw error;
         }
 
         // Fallback for safety blocks or specific quota issues

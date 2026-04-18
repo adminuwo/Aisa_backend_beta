@@ -10,7 +10,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Dual-mode initialization: Try Gemini API Key first, fallback to Vertex AI
 const apiKey = process.env.GEMINI_API_KEY;
 const projectId = process.env.GCP_PROJECT_ID;
-const location = 'asia-south1';
+// Explicitly respect user's requested region (asia-south1)
+const location = process.env.GCP_LOCATION || "us-central1";
 const keyFilePath = path.join(__dirname, '../google_cloud_credentials.json');
 
 let genAI;
@@ -51,7 +52,7 @@ else if (projectId) {
 
 import { getConfig, getFullSystemInstruction } from '../services/configService.js';
 
-// Model name - gemini-1.5-flash is latest stable and widely available on Vertex AI
+// Model name - Set strictly to user's explicit request
 export const modelName = "gemini-2.5-flash";
 
 /**

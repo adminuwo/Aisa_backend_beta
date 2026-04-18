@@ -276,7 +276,7 @@ router.post("/", optionalVerifyToken, identifyGuest, async (req, res) => {
         sessionId: sessionId || `temp_${Date.now()}`,
         userId: userId || null,
         guestId: req.guest?.guestId || null,
-        projectId: req.body.projectId || null,
+        projectId: (req.body.projectId === 'default' || req.body.projectId === 'all') ? null : (req.body.projectId || null),
         title: aiTitle || "New Chat",
         messages: []
       });
@@ -353,7 +353,7 @@ router.get('/', optionalVerifyToken, identifyGuest, async (req, res) => {
 
     if (userId) {
       const query = { userId: userId };
-      if (projectId && projectId !== 'null' && projectId !== 'undefined') {
+      if (projectId && projectId !== 'null' && projectId !== 'undefined' && projectId !== 'default' && projectId !== 'all') {
         query.projectId = projectId;
       } else {
         // If no projectId or 'null', return chats where projectId is null or doesn't exist
@@ -496,7 +496,7 @@ router.post('/:sessionId/message', optionalVerifyToken, identifyGuest, async (re
         sessionId,
         userId: userId || null,
         guestId: guestId || null,
-        projectId: req.body.projectId || null,
+        projectId: (req.body.projectId === 'default' || req.body.projectId === 'all') ? null : (req.body.projectId || null),
         title: title || "New Chat",
         messages: []
       });
