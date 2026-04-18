@@ -120,12 +120,12 @@ export const performSearch = async (query, userLanguage = 'English') => {
 
     } catch (error) {
         logger.error(`[WebSearch] Primary Search Failed: ${error.response?.data?.error?.message || error.message}`);
-        
+
         // --- FALLBACK MECHANISM ---
         try {
             logger.info(`[WebSearch] Attempting fallback search for: "${query}"`);
             const searchData = await performWebSearch(query, 5);
-            
+
             if (!searchData || !searchData.results || searchData.results.length === 0) {
                 logger.warn('[WebSearch] Fallback search also yielded no results.');
                 return null;
@@ -137,8 +137,8 @@ export const performSearch = async (query, userLanguage = 'English') => {
                 description: r.snippet
             }));
 
-            const snippetsText = searchData.results.map((r, i) => `${i+1}. [${r.title}] ${r.snippet} (Source: ${r.link})`).join('\n\n');
-            
+            const snippetsText = searchData.results.map((r, i) => `${i + 1}. [${r.title}] ${r.snippet} (Source: ${r.link})`).join('\n\n');
+
             const systemPrompt = configService.getConfig('WEB_SEARCH_RULES') + `
             TODAY'S DATE: ${new Date().toDateString()}
             

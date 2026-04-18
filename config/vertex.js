@@ -10,7 +10,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Dual-mode initialization: Try Gemini API Key first, fallback to Vertex AI
 const apiKey = process.env.GEMINI_API_KEY;
 const projectId = process.env.GCP_PROJECT_ID;
-const location = process.env.GCP_LOCATION || "us-central1";
+const location = 'asia-south1';
 const keyFilePath = path.join(__dirname, '../google_cloud_credentials.json');
 
 let genAI;

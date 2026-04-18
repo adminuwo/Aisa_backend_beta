@@ -154,37 +154,24 @@ export const getOrInitPlanUsage = async (workspaceId, planType) => {
 
 let impersonatedStorageClient = null;
 
-const getImpersonatedStorage = async () => {
+const getImpersonatedStorage = () => {
   if (impersonatedStorageClient) return impersonatedStorageClient;
 
   const targetPrincipal = process.env.VIDEO_SERVICE_ACCOUNT;
   if (!targetPrincipal) return storage;
 
   try {
-    const auth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/cloud-platform'] });
-    const sourceClient = await auth.getClient();
-
-    const impersonatedClient = new Impersonated({
-      sourceClient,
-      targetPrincipal,
-      lifetime: 3600,
-      delegates: [],
-      targetScopes: ['https://www.googleapis.com/auth/cloud-platform']
-    });
-
-    // explicitly fetch token to confirm impersonation works
-    await impersonatedClient.getAccessToken();
-
+    // Rely on the native Storage SDK option for impersonated signing
     impersonatedStorageClient = new Storage({
-      authClient: impersonatedClient,
-      projectId: process.env.GCP_PROJECT_ID
+      projectId: process.env.GCP_PROJECT_ID,
+      impersonatedServiceAccount: targetPrincipal
     });
     
-    console.log(`[GCS] Successfully initialized impersonated storage client for ${targetPrincipal}`);
+    console.log(`[GCS] Successfully initialized impersonated storage API for ${targetPrincipal}`);
     return impersonatedStorageClient;
   } catch (error) {
-    console.error(`[GCS] Failed to initialize impersonated storage: ${error.message}`);
-    return storage; // Fall back to default ADC
+    console.error(`[GCS] Failed to configure impersonated storage API: ${error.message}`);
+    return storage; 
   }
 };
 
@@ -195,28 +182,15 @@ export const generateSignedUrl = async (gcsUrl) => {
   try {
     if (!gcsUrl || !gcsUrl.includes('storage.googleapis.com')) return gcsUrl;
 
-    const BASE_URL = process.env.BACKEND_PUBLIC_URL || `http://localhost:${process.env.PORT || 8080}`;
+    // Strip any existing query parameters from previous signed URLs
+    const urlWithoutQuery = gcsUrl.split('?')[0];
 
-    const rawParts = gcsUrl.split('storage.googleapis.com/')[1];
+    const rawParts = urlWithoutQuery.split('storage.googleapis.com/')[1];
     const bucketInUrl = rawParts.split('/')[0];
     const fileName = rawParts.split('/').slice(1).join('/');
 
-    // Use impersonated storage if available (for signed URLs under ADC)
-    const activeStorage = await getImpersonatedStorage();
-
-    // Check if client can literally sign (ADC alone cannot, must have impersonated client or explicit JSON key)
-    const canSign = activeStorage.authClient && (
-       activeStorage.authClient instanceof Impersonated || 
-       (activeStorage.authClient.emailProvider && activeStorage.authClient.emailProvider.email)
-    );
-
-    if (!canSign) {
-       if (!global.signingWarningLogged) {
-         console.warn("[GCS] Signing not possible without impersonated client or client_email. Falling back to internal proxy.");
-         global.signingWarningLogged = true;
-       }
-       return `${BASE_URL}/api/media/proxy?url=${encodeURIComponent(gcsUrl)}`;
-    }
+    // Use strictly impersonated storage for pure Signed URL architecture
+    const activeStorage = getImpersonatedStorage();
 
     const file = activeStorage.bucket(bucketInUrl).file(fileName);
 
@@ -228,11 +202,8 @@ export const generateSignedUrl = async (gcsUrl) => {
 
     return url;
   } catch (error) {
-    const BASE_URL = process.env.BACKEND_PUBLIC_URL || `http://localhost:${process.env.PORT || 8080}`;
-    if (!global.signingErrorLogged) {
-       console.error("[GCS] Failed to generate signed URL. Falling back to proxy. Error:", error.message);
-       global.signingErrorLogged = true;
-    }
-    return `${BASE_URL}/api/media/proxy?url=${encodeURIComponent(gcsUrl)}`; // Fallback
+    console.error("[GCS] Impersonated signed URL generation failed:", error.message);
+    // Explicitly throwing the error rather than proxying, enforcing the architecture
+    throw new Error(`Impersonated URL Generation Failed: ${error.message}`);
   }
 };
