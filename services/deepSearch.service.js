@@ -1,6 +1,5 @@
 import axios from 'axios';
 import dotenv from 'dotenv';
-import { AskVertexRaw } from './vertex.service.js';
 
 dotenv.config();
 
@@ -10,6 +9,7 @@ const logger = {
     error: (msg) => console.error(`[ERROR] ${msg}`)
 };
 
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const TAVILY_API_KEY = process.env.TAVILY_API_KEY;
 
 /**
@@ -32,7 +32,7 @@ export const performDeepSearch = async (query, userLanguage = 'English') => {
         }
 
         // --- STEP 1: QUERY PLANNING ---
-        logger.info('[DeepSearch] Step 1: Query Planning (via Gemini)');
+        logger.info('[DeepSearch] Step 1: Query Planning');
         const planPrompt = `
         You are a research planner. Given a user query, break it down into 3-5 distinct, specific search queries that will help gather comprehensive information.
         USER QUERY: "${query}"
@@ -41,26 +41,27 @@ export const performDeepSearch = async (query, userLanguage = 'English') => {
         Example: {"queries": ["query 1", "query 2", "query 3"]}
         `;
 
-        const planContent = await AskVertexRaw(planPrompt, {
-            temperature: 0.2,
-            maxOutputTokens: 500,
-            modelOverride: 'gemini-1.5-flash'
+        const planResponse = await axios.post('https://api.openai.com/v1/chat/completions', {
+            model: 'gpt-4o-mini',
+            messages: [{ role: 'user', content: planPrompt }],
+            response_format: { type: "json_object" }
+        }, {
+            headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}` }
         });
 
+        const planContent = planResponse.data.choices[0].message.content;
         logger.info(`[DeepSearch] Planner Response Raw: ${planContent}`);
 
         let queries = [query]; // Fallback
         try {
-            // AskVertexRaw might return a string with or without markdown backticks
-            const cleanedPlan = planContent.replace(/```json\s*|\s*```/g, '').trim();
-            const parsed = JSON.parse(cleanedPlan);
+            const parsed = JSON.parse(planContent);
             queries = parsed.queries || Object.values(parsed)[0];
             if (!Array.isArray(queries)) {
                 logger.warn('[DeepSearch] Planner did not return an array, using root values.');
                 queries = Object.values(parsed).filter(v => Array.isArray(v))[0] || [query];
             }
         } catch (e) {
-            logger.warn(`[DeepSearch] Query planning parsing failed: ${e.message}, using original query.`);
+            logger.warn('[DeepSearch] Query planning parsing failed, using original query.');
         }
 
         logger.info(`[DeepSearch] Final Queries to Execute: ${JSON.stringify(queries)}`);
@@ -86,12 +87,14 @@ export const performDeepSearch = async (query, userLanguage = 'English') => {
 
         const searchResults = await Promise.all(searchPromises);
 
+        let allResults = [];
         let aggregatedContent = "";
         let sources = [];
 
         searchResults.forEach((res, index) => {
             if (res.data && res.data.results) {
                 res.data.results.forEach(item => {
+                    allResults.push(item);
                     aggregatedContent += `\n\n--- Source: ${item.title} ---\n${item.raw_content || item.content}`;
                     sources.push({
                         title: item.title,
@@ -118,8 +121,8 @@ export const performDeepSearch = async (query, userLanguage = 'English') => {
         const uniqueSources = Array.from(new Map(sources.map(s => [s.url, s])).values()).slice(0, 15);
         logger.info(`[DeepSearch] Unique Sources: ${uniqueSources.length}`);
 
-        // Limit context to ~120k chars (well within Gemini 1.5 Flash 1M window)
-        const truncatedContent = aggregatedContent.substring(0, 500000);
+        // Limit context to ~30k tokens (roughly 120k chars)
+        const truncatedContent = aggregatedContent.substring(0, 120000);
 
         const structureTitles = {
             'Hinglish': {
@@ -176,24 +179,28 @@ export const performDeepSearch = async (query, userLanguage = 'English') => {
         `;
 
         try {
-            logger.info('[DeepSearch] Step 4: Synthesis (via Gemini)');
-            const synthesisResult = await AskVertexRaw(synthesisPrompt, {
-                temperature: 0.3,
-                modelOverride: 'gemini-1.5-flash'
+            const finalReport = await axios.post('https://api.openai.com/v1/chat/completions', {
+                model: 'gpt-4o-mini', // Switched to mini for better reliability/speed
+                messages: [{ role: 'user', content: synthesisPrompt }],
+                temperature: 0.3
+            }, {
+                headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}` },
+                timeout: 60000 // Increased to 60s
             });
 
             logger.info('[DeepSearch] Synthesis Successful.');
             return {
-                summary: synthesisResult,
+                summary: finalReport.data.choices[0].message.content,
                 sources: uniqueSources
             };
         } catch (synthError) {
-            logger.error(`[DeepSearch] Synthesis Step Failed: ${synthError.message}`);
+            logger.error(`[DeepSearch] Synthesis Step Failed: ${synthError.response?.data?.error?.message || synthError.message}`);
+            if (synthError.response?.data) console.error("Synthesis Error Detail:", JSON.stringify(synthError.response.data));
             throw synthError;
         }
 
     } catch (error) {
-        logger.error(`[DeepSearch] Critical Research Error: ${error.message}`);
+        logger.error(`[DeepSearch] Critical Research Error: ${error.response?.data?.error?.message || error.message}`);
         return {
             summary: "I encountered a problem performing a Deep Search research phase. This could be due to a service timeout or API credit limits. Please try again with a more specific query.",
             sources: []
