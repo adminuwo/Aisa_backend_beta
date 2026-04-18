@@ -182,39 +182,62 @@ Maintain any text response outside the JSON block.`;
             toolRestrictions = "\n\n### MODE: NORMAL CHAT. Strictly avoid executing magic actions. Answer questions using text only. If the user wants to generate media, tell them to use the AISA Magic Tools menu.";
         }
 
-        // --- INTENT CLASSIFICATION (NEW: STOCK & LEGAL SMART) ---
+        // --- INTENT CLASSIFICATION & RAG DETECTION (PARALLELIZED FOR SPEED) ---
         let classification = null;
-        let legalInstruction = "";
+        let needsRAG = false;
+        let rewrittenQuery = message;
+        
         try {
-            // Build simple conversation summary for classifier
             const chatSummary = (combinedHistory || []).slice(-3).map(m => `${m.role}: ${m.content || m.text}`).join(' | ');
-            classification = await classifyIntent(message, images || documents || [], chatSummary);
             
-            // 1. LEGAL SMART ROUTING
-            if (classification && classification.intent && classification.intent.startsWith('legal_')) {
-                // Only apply specialized prompt if we aren't ALREADY in LEGAL_TOOLKIT mode with this tool
-                const isRedundant = mode === 'LEGAL_TOOLKIT' && (toolName === classification?.intent);
-                if (!isRedundant) {
-                   logger.info(`[AI-Service] Legal Intent Detected: ${classification.intent}. Applying specialized prompts.`);
-                   legalInstruction = `\n\n### SPECIALIZED LEGAL TOOL: ${classification.intent}\n${getLegalPrompt(classification.intent)}`;
-                }
+            // Run independent pre-processing tasks in parallel
+            const [intentResult, ragDecision] = await Promise.all([
+                classifyIntent(message, images || documents || [], chatSummary).catch(() => null),
+                // Only detect RAG if we have documents or might need company info
+                (async () => {
+                    const docCount = await Knowledge.countDocuments();
+                    const manualCorpusId = process.env.VERTEX_RAG_CORPUS_ID;
+                    if (docCount > 0 || manualCorpusId) {
+                        const lowerMsg = message.toLowerCase().trim();
+                        const companyKeywords = ['uwo', 'aisa', 'ai mall', 'unified web', 'what can you do', 'your features', 'your capabilities', 'who are you', 'how can you help', 'tell me about your services'];
+                        const hasCompanyKeyword = companyKeywords.some(k => lowerMsg.includes(k));
+                        
+                        if (mode === 'LEGAL_TOOLKIT') return true;
+                        if (hasCompanyKeyword) return true;
+                        return await vertexService.detectRAGNeed(message).catch(() => false);
+                    }
+                    return false;
+                })()
+            ]);
+
+            classification = intentResult;
+            needsRAG = ragDecision;
+
+            // Trigger parallel rewrite if RAG is needed
+            if (needsRAG) {
+                rewrittenQuery = await vertexService.rewriteQuery(message).catch(() => message);
             }
-        } catch (intentErr) {
-            logger.warn(`[AI-Service] Intent classification failed: ${intentErr.message}`);
+        } catch (preProcessErr) {
+            logger.warn(`[AI-Service] Pre-processing failed: ${preProcessErr.message}`);
         }
 
-        // --- INTENT-BASED TOOL ROUTING (NEW: STOCKS) ---
+        let legalInstruction = "";
+        if (classification && classification.intent && classification.intent.startsWith('legal_')) {
+            const isRedundant = mode === 'LEGAL_TOOLKIT' && (toolName === classification?.intent);
+            if (!isRedundant) {
+               logger.info(`[AI-Service] Legal Intent Detected: ${classification.intent}.`);
+               legalInstruction = `\n\n### SPECIALIZED LEGAL TOOL: ${classification.intent}\n${getLegalPrompt(classification.intent)}`;
+            }
+        }
+
+        // --- INTENT-BASED TOOL ROUTING (STOCKS) ---
         if (classification && (classification.intent === 'stock_researcher' || classification.tools?.includes('stock_researcher'))) {
-            logger.info(`[AI-Service] Stock Researcher intent detected. Triggering Snapshot...`);
-            
-            // Try to extract symbol from metadata or message
+            logger.info(`[AI-Service] Stock Researcher intent detected.`);
             let symbol = classification.metadata?.stock_symbol || null;
             if (!symbol) {
-                // Secondary extraction: find words in CAPS like RELIANCE, TCS, AAPL
                 const capsMatch = message.match(/\b[A-Z]{2,10}\b/);
                 if (capsMatch) symbol = capsMatch[0];
             }
-
             if (symbol) {
                 const { getAiSnapshot } = await import('./stockService.js');
                 const snapshot = await getAiSnapshot(symbol);
@@ -224,13 +247,12 @@ Maintain any text response outside the JSON block.`;
                         snapshot: snapshot,
                         type: 'stock_snapshot'
                     };
-                    return finalResponseData;
                 }
             }
         }
 
         // --- GMAIL ASSISTANT ROUTING ---
-        if (classification && (classification.intent === 'gmail_assistant' || classification.tools?.includes('gmail_assistant'))) {
+        if (!finalResponseData.text && classification && (classification.intent === 'gmail_assistant' || classification.tools?.includes('gmail_assistant'))) {
             logger.info(`[AI-Service] Gmail Assistant intent detected. Triggering Gmail Service...`);
             const { handleGmailIntent } = await import('./intent/gmailService.js');
             const gmailResponse = await handleGmailIntent(userId, message);
@@ -239,7 +261,6 @@ Maintain any text response outside the JSON block.`;
                     text: gmailResponse.text,
                     type: 'gmail_assistant_action'
                 };
-                return finalResponseData;
             }
         }
 
@@ -316,76 +337,34 @@ Maintain any text response outside the JSON block.`;
             finalResponseData = { text: vertexResponse, isRealTime: false };
         } else {
             // PRIORITY 2: Company Knowledge Base (Vertex RAG)
-            const docCount = await Knowledge.countDocuments();
             let ragContext = null;
-            let rewrittenQuery = message;
-            let hasCompanyKeyword = false;
-            let needsRAG = false;
-
-            const manualCorpusId = process.env.VERTEX_RAG_CORPUS_ID;
-            if (docCount > 0 || manualCorpusId) {
-                // Step 0: Robust Detection (Only use RAG for company-specific or capability queries)
-                const lowerMsg = message.toLowerCase().trim();
-                const companyKeywords = ['uwo', 'aisa', 'ai mall', 'unified web', 'what can you do', 'your features', 'your capabilities', 'who are you', 'how can you help', 'tell me about your services'];
-                const generalPhrases = ['what is', 'how to', 'explain', 'define', 'meaning of', 'tell me about', 'why is', 'suggest', 'give me', 'who is'];
+            if (needsRAG) {
+                const targetCategory = (mode === 'LEGAL_TOOLKIT' || legalInstruction) ? 'LEGAL' : 'GENERAL';
+                logger.info(`[RAG-Logic] Target Category: ${targetCategory}`);
+                ragContext = await vertexService.retrieveContextFromRag(rewrittenQuery, 8, targetCategory);
                 
-                // If it looks like a general question and lacks company keywords, SKIP RAG immediately (No Resources)
-                hasCompanyKeyword = companyKeywords.some(k => lowerMsg.includes(k));
-                const startsWithGeneral = generalPhrases.some(p => lowerMsg.startsWith(p));
+                if (!ragContext) {
+                    logger.warn(`[RAG-Logic] No context found for ${targetCategory}. Allowing fallback to general model.`);
+                }
                 
-                logger.info(`[RAG-Logic] Msg: "${lowerMsg}" | hasKeyword: ${hasCompanyKeyword} | startsGen: ${startsWithGeneral}`);
-
-                if (mode === 'LEGAL_TOOLKIT' || legalInstruction) {
-                    needsRAG = true;
-                    logger.info(`[RAG-Logic] LEGAL MODE detected. Forcing RAG.`);
-                } else if (hasCompanyKeyword) {
-                    needsRAG = true; // High confidence it's about the company or its abilities
-                    logger.info(`[RAG-Logic] Decision: YES (Keyword/Capability match) for: "${lowerMsg}"`);
-                } else if (startsWithGeneral && !hasCompanyKeyword) {
-                    // USER REQUIREMENT: Normal questions like "What is..." should NEVER trigger RAG unless brands are mentioned.
-                    needsRAG = false;
-                    logger.warn(`[RAG-Logic] FORCED NO for generic question: "${lowerMsg}"`);
-                } else {
-                    // Ambiguous - ask the AI detector for a decision
-                    needsRAG = await vertexService.detectRAGNeed(message);
-                    logger.info(`[RAG-Logic] Decision: ${needsRAG ? 'YES' : 'NO'} (AI Detector) for: "${lowerMsg}"`);
+                // Logging
+                try {
+                    await QueryLog.create({
+                        user_question: message,
+                        rewritten_query: rewrittenQuery,
+                        retrieved_documents: ragContext?.sources?.map(s => ({
+                            document_title: s.document_title,
+                            source_type: s.source_type,
+                            chunk_id: s.chunk_id,
+                            snippet: s.snippet
+                        })) || [],
+                        userId: userId || 'admin'
+                    });
+                } catch (logErr) {
+                    logger.error(`[QueryLog] Failed: ${logErr.message}`);
                 }
-
-                if (needsRAG) {
-                    // Step 1: Query Rewriting
-                    rewrittenQuery = await vertexService.rewriteQuery(message);
-                    
-                    // Step 2: Retrieval using Rewritten Query and Category Isolation
-                    const targetCategory = (mode === 'LEGAL_TOOLKIT' || legalInstruction) ? 'LEGAL' : 'GENERAL';
-                    logger.info(`[RAG-Logic] Target Category: ${targetCategory}`);
-                    
-                    ragContext = await vertexService.retrieveContextFromRag(rewrittenQuery, 8, targetCategory);
-                    
-                    // Step 3: Strict Isolation Rule (Relaxed: allow fallback if no context found)
-                    if (needsRAG && !ragContext) {
-                        logger.warn(`[RAG-Logic] No context found for ${targetCategory}. Allowing fallback to general model.`);
-                    }
-
-                    
-                    // --- Step 3: Logging (Optional but requested) ---
-                    try {
-                        await QueryLog.create({
-                            user_question: message,
-                            rewritten_query: rewrittenQuery,
-                            retrieved_documents: ragContext?.sources?.map(s => ({
-                                document_title: s.document_title,
-                                source_type: s.source_type,
-                                chunk_id: s.chunk_id,
-                                snippet: s.snippet
-                            })) || [],
-                            userId: userId || 'admin'
-                        });
-                    } catch (logErr) {
-                        logger.error(`[QueryLog] Failed: ${logErr.message}`);
-                    }
-                } else {
-                    logger.info(`[RAG] Skipping retrieval. Query "${message}" is generic.`);
-                }
+            } else {
+                logger.info(`[RAG] Skipping retrieval. Query "${message}" is generic.`);
             }
 
             // Step 4: Final Processing
@@ -492,9 +471,23 @@ Maintain any text response outside the JSON block.`;
         // --- Generate Related Questions (Async but awaited for final response) ---
         let suggestions = [];
         try {
-            suggestions = await generateRelatedQuestions(message, finalResponseData.text, userLanguage);
+            suggestions = await generateRelatedQuestions(message, finalResponseData.text, userLanguage, mode);
         } catch (suggestionErr) {
             logger.error(`[RelatedQuestions] Failed: ${suggestionErr.message}`);
+        }
+
+        // --- ENHANCED FALLBACK SUGGESTIONS (Per user request) ---
+        const GENERAL_FALLBACKS = ["Explain in simple terms", "Give examples", "Summarize this"];
+        const LEGAL_FALLBACKS = ["Draft a legal notice", "Explain my rights", "Check for risks"];
+        
+        const fallbacks = (mode === 'LEGAL_TOOLKIT' || legalInstruction) ? LEGAL_FALLBACKS : GENERAL_FALLBACKS;
+
+        if (!suggestions || suggestions.length === 0) {
+            suggestions = fallbacks;
+        } else if (suggestions.length < 3) {
+            // Fill up to 3 if AI was lazy
+            const remaining = fallbacks.filter(f => !suggestions.includes(f));
+            suggestions = [...suggestions, ...remaining].slice(0, 3);
         }
 
         finalResponseData.suggestions = suggestions;
@@ -556,14 +549,17 @@ export const reloadVectorStore = async () => {
     await initializeFromDB();
 };
 
-export const generateRelatedQuestions = async (userMessage, aiResponse, language = 'English') => {
+export const generateRelatedQuestions = async (userMessage, aiResponse, language = 'English', mode = 'GENERAL') => {
     try {
         const prompt = `Based on the following conversation, generate 3 to 4 highly intelligent, context-aware follow-up questions that the user might want to ask next to continue the conversation naturally.
         
 User Message: "${userMessage}"
 AI Response: "${aiResponse}"
+Mode: ${mode}
 
 Rules:
+- Questions must be relevant and helpful.
+- If Mode is LEGAL_TOOLKIT, suggest legal follow-ups (e.g., draft notice, check evidence, next steps).
 - Each suggestion MUST be a complete, meaningful question or prompt that feels like real user intent.
 - Avoid generic actions like "Explain more", "Give examples", or "Summarize".
 - Keep each suggestion short (6-12 words).
@@ -574,7 +570,8 @@ Rules:
 
         const response = await vertexService.AskVertexRaw(prompt, { 
             maxOutputTokens: 150, 
-            temperature: 0.7 
+            temperature: 0.7,
+            modelOverride: 'gemini-1.5-flash' 
         });
         
         const cleanJson = response.replace(/```json\s*|\s*```/g, '').trim();
@@ -609,7 +606,8 @@ Title:`;
 
         const title = await vertexService.AskVertexRaw(fullPrompt, {
             maxOutputTokens: 50,
-            temperature: 0.1
+            temperature: 0.1,
+            modelOverride: 'gemini-1.5-flash'
         });
 
         // Log raw response
