@@ -11,7 +11,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const apiKey = process.env.GEMINI_API_KEY;
 const projectId = process.env.GCP_PROJECT_ID;
 // Explicitly respect user's requested region (asia-south1)
-const location = process.env.GCP_LOCATION || "us-central1";
+const location ="asia-south1";
 const keyFilePath = path.join(__dirname, '../google_cloud_credentials.json');
 
 let genAI;
