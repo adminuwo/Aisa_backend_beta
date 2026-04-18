@@ -68,6 +68,12 @@ router.get('/calendar/pipeline-rows/:calendarId', socialAgentController.getPipel
 // DELETE /api/social-agent/calendar/entry/:id - Delete a specific calendar entry
 router.delete('/calendar/entry/:id', socialAgentController.deleteCalendarEntry);
 
+// DELETE /api/social-agent/calendar/clear/:workspaceId - Clear all calendar entries for a workspace
+router.delete('/calendar/clear/:workspaceId', socialAgentController.clearCalendarForWorkspace);
+
+// PATCH /api/social-agent/onboarding/reset - Reset onboarding for all user workspaces (called on logout)
+router.patch('/onboarding/reset', socialAgentController.resetOnboarding);
+
 /**
  * Usage Tracking
  */

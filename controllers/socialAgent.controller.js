@@ -46,10 +46,13 @@ export const completeOnboarding = async (req, res) => {
     const {
       workspaceId, customName, role, industry,
       contentCreationTime, postingFrequency, adsComfortLevel, biggestChallenge,
-      website, brandName, businessDescription, brandColors, fontFamily, targetEthnicity, logoUrl
+      website, brandName, businessDescription, brandColors, fontFamily, targetEthnicity, logoUrl,
+      noWebsite
     } = req.body;
 
-    // 1. Update the Workspace onboarding status
+    const effectiveBrandName = brandName || customName;
+
+    // 1. Update the Workspace onboarding status & name
     const workspace = await SocialAgentWorkspace.findByIdAndUpdate(
       workspaceId,
       {
@@ -63,7 +66,7 @@ export const completeOnboarding = async (req, res) => {
           'onboarding.adsComfortLevel': adsComfortLevel,
           'onboarding.biggestChallenge': biggestChallenge,
           'onboarding.website': website,
-          workspaceName: `${customName}'s Workspace`
+          workspaceName: effectiveBrandName ? `${effectiveBrandName}'s Workspace` : `${customName}'s Workspace`
         }
       },
       { new: true }
@@ -71,31 +74,59 @@ export const completeOnboarding = async (req, res) => {
 
     if (!workspace) return res.status(404).json({ success: false, message: 'Workspace not found' });
 
-    /* 
-    // 2. Initialize or Update the BrandProfile with collected setup data (SKIP IF PERSONAL PROFILE)
-    if (!workspace.isPersonalProfile) {
-      let brandProfile = await BrandProfile.findOne({ workspaceId });
-      if (!brandProfile) brandProfile = new BrandProfile({ workspaceId });
+    // 2. Initialize or Update BrandProfile with all onboarding data
+    let brandProfile = await BrandProfile.findOne({ workspaceId });
+    if (!brandProfile) brandProfile = new BrandProfile({ workspaceId });
 
-      if (brandName) {
-        brandProfile.companyName = brandName;
-        // NEW: Sync workspace name with Brand Name for cleaner UI
-        await SocialAgentWorkspace.findByIdAndUpdate(workspaceId, { workspaceName: brandName });
-      }
-      if (businessDescription) brandProfile.companyOverviewText = businessDescription;
-      if (brandColors && Array.isArray(brandColors)) brandProfile.brandColors = brandColors;
-      if (fontFamily) brandProfile.fontFamily = fontFamily;
-      if (targetEthnicity) brandProfile.targetEthnicity = targetEthnicity;
-      if (logoUrl) brandProfile.logoUrl = logoUrl;
-
-      await brandProfile.save();
+    // Sync brand name
+    if (effectiveBrandName) {
+      brandProfile.companyName = effectiveBrandName;
+      // Keep workspace name in sync with brand name
+      await SocialAgentWorkspace.findByIdAndUpdate(workspaceId, {
+        workspaceName: effectiveBrandName
+      });
     }
-    */
 
-    // Re-fetch workspace to get updated name
-    const updatedWorkspace = await SocialAgentWorkspace.findById(workspaceId);
+    // Sync all onboarding fields into BrandProfile
+    if (businessDescription) {
+      brandProfile.extractedBrandSummary = businessDescription;
+      brandProfile.companyOverviewText = businessDescription;
+    }
+    if (website && !noWebsite) brandProfile.website = website;
+    if (brandColors) {
+      brandProfile.brandColors = Array.isArray(brandColors)
+        ? brandColors
+        : (typeof brandColors === 'string' ? JSON.parse(brandColors) : []);
+    }
+    if (fontFamily) brandProfile.fontFamily = fontFamily;
+    if (targetEthnicity) brandProfile.targetEthnicity = targetEthnicity;
+    if (logoUrl) brandProfile.logoUrl = logoUrl;
+    if (role) brandProfile.targetAudience = brandProfile.targetAudience || role;
+    if (postingFrequency) brandProfile.postingFrequency = postingFrequency;
 
-    res.json({ success: true, workspace: updatedWorkspace });
+    await brandProfile.save();
+
+    // Re-fetch workspace with brand profile populated via aggregate
+    const mongoose = await import('mongoose');
+    const [updatedWorkspace] = await SocialAgentWorkspace.aggregate([
+      { $match: { _id: new mongoose.Types.ObjectId(workspaceId) } },
+      {
+        $lookup: {
+          from: 'brandprofiles',
+          localField: '_id',
+          foreignField: 'workspaceId',
+          as: 'brandProfileData'
+        }
+      },
+      {
+        $addFields: {
+          brandProfile: { $arrayElemAt: ['$brandProfileData', 0] }
+        }
+      },
+      { $project: { brandProfileData: 0 } }
+    ]);
+
+    res.json({ success: true, workspace: updatedWorkspace || workspace, brandProfile });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -709,3 +740,45 @@ export const deleteCalendarEntry = async (req, res) => {
   }
 };
 
+/**
+ * Clear all calendar entries for a workspace (without deleting the workspace itself)
+ */
+export const clearCalendarForWorkspace = async (req, res) => {
+  try {
+    const { workspaceId } = req.params;
+
+    // Security: only owner can clear
+    const workspace = await SocialAgentWorkspace.findOne({ _id: workspaceId, userId: req.user.id });
+    if (!workspace) return res.status(404).json({ success: false, message: 'Workspace not found or unauthorized' });
+
+    // Delete all CalendarEntries and ContentCalendars for this workspace
+    const [entriesResult, calendarsResult] = await Promise.all([
+      CalendarEntry.deleteMany({ workspaceId }),
+      ContentCalendar.deleteMany({ workspaceId })
+    ]);
+
+    logger.info(`[clearCalendar] Cleared ${entriesResult.deletedCount} entries and ${calendarsResult.deletedCount} calendars for workspace ${workspaceId}`);
+    res.json({ success: true, message: 'Calendar cleared', deletedEntries: entriesResult.deletedCount });
+  } catch (error) {
+    logger.error(`[clearCalendar] ${error.message}`);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * Reset onboarding status for all workspaces of the current user
+ */
+export const resetOnboarding = async (req, res) => {
+  try {
+    const result = await SocialAgentWorkspace.updateMany(
+      { userId: req.user.id },
+      { $set: { "onboarding.completed": false } }
+    );
+
+    logger.info(`[resetOnboarding] Reset onboarding for ${result.modifiedCount} workspaces of user ${req.user.id}`);
+    res.json({ success: true, message: 'Onboarding reset successfully' });
+  } catch (error) {
+    logger.error(`[resetOnboarding] ${error.message}`);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
