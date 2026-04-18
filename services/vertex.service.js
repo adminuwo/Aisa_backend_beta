@@ -340,20 +340,9 @@ export const AskVertexRaw = async (prompt, options = {}) => {
         // Log full error details for debugging
         logger.error(`[AskVertexRaw] FULL ERROR: ${err.message}`);
         if (err.stack) logger.debug(`[AskVertexRaw] Stack Trace: ${err.stack}`);
-        if (err.response?.data) {
-            logger.error(`[AskVertexRaw] API Response Error: ${JSON.stringify(err.response.data)}`);
-            // Specific check for model not found - respect the user's model choice
-            if (JSON.stringify(err.response.data).includes("NOT_FOUND") && !options.isFallback) {
-                logger.error(`[AskVertexRaw] Model ${options.modelOverride || modelName} not found in region. Please verify GCP Model Garden permissions.`);
-                throw err;
-            }
-        }
-        if (err.status) logger.error(`[AskVertexRaw] HTTP Status: ${err.status}`);
-        
-        // Additional generic 404 handler without fallback
-        if (err.message.includes("404") || err.message.includes("NOT_FOUND")) {
-             logger.error(`[AskVertexRaw] Critical 404. Model unavailable.`);
-             throw err;
+        if ((err.message.includes("404") || err.message.includes("NOT_FOUND")) && !options.isFallback) {
+            logger.error(`[AskVertexRaw] Model ${options.modelOverride || modelName} not found. Please verify the model ID and region.`);
+            throw err;
         }
         
         throw err;
@@ -472,9 +461,9 @@ export const askVertex = async (prompt, context = null, options = {}) => {
         logger.error(`[VERTEX] Error: ${error.message}`);
         if (error.stack) logger.debug(`[VERTEX] Stack: ${error.stack}`);
         
-        // Specific error for model not found to highlight the user's specific region/version requirement
+        // Specific error for model not found 
         if ((error.message.includes("404") || error.message.includes("NOT_FOUND")) && !options.isFallback) {
-            logger.error(`[VERTEX] Model ${modelName} failed. The model might not be enabled or available in your selected region.`);
+            logger.error(`[VERTEX] Model ${modelName} NOT_FOUND in region. Please verify model availability.`);
             throw error;
         }
 

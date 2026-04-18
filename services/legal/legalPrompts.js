@@ -1255,4 +1255,4 @@ START RESPONSE WITH:
 
 };
 
-export const LEGAL_DISCLAIMER = ``;
+export const LEGAL_DISCLAIMER = `⚖️ **Legal Disclaimer:** This AI analysis is for informational purposes only and does not constitute professional legal advice. AI can make mistakes; always consult a qualified lawyer before making legal decisions. This tool is a senior legal assistant designed to support your legal journey with data-driven insights.`;
