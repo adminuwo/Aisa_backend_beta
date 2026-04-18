@@ -9,7 +9,7 @@ const router = express.Router();
 // @access  Private
 router.post('/', verifyToken, async (req, res) => {
     try {
-        const { name, clientName, caseSummary, keyIssue, importantDates, isLegalCase } = req.body;
+        const { name, clientName, caseSummary, keyIssue, importantDates, isLegalCase, caseType, accused } = req.body;
         if (!name) {
             return res.status(400).json({ error: 'Project name is required' });
         }
@@ -21,7 +21,9 @@ router.post('/', verifyToken, async (req, res) => {
             caseSummary: caseSummary || '',
             keyIssue: keyIssue || '',
             importantDates: importantDates || [],
-            isLegalCase: isLegalCase === undefined ? false : isLegalCase
+            isLegalCase: isLegalCase === undefined ? false : isLegalCase,
+            caseType: caseType || '',
+            accused: accused || ''
         });
 
         await project.save();
@@ -63,7 +65,7 @@ router.get('/:id', verifyToken, async (req, res) => {
 // @access  Private
 router.put('/:id', verifyToken, async (req, res) => {
     try {
-        const { name, clientName, caseSummary, keyIssue, importantDates, isLegalCase } = req.body;
+        const { name, clientName, caseSummary, keyIssue, importantDates, isLegalCase, caseType, accused } = req.body;
         
         const updateData = {};
         if (name !== undefined) updateData.name = name;
@@ -72,6 +74,8 @@ router.put('/:id', verifyToken, async (req, res) => {
         if (keyIssue !== undefined) updateData.keyIssue = keyIssue;
         if (importantDates !== undefined) updateData.importantDates = importantDates;
         if (isLegalCase !== undefined) updateData.isLegalCase = isLegalCase;
+        if (caseType !== undefined) updateData.caseType = caseType;
+        if (accused !== undefined) updateData.accused = accused;
 
         const project = await Project.findOneAndUpdate(
             { _id: req.params.id, userId: req.user.id },
