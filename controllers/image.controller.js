@@ -14,7 +14,7 @@ import axios from 'axios';
 const GEMINI_IMAGE_MODELS = [
     'gemini-3.1-flash-image-preview',
     'gemini-3-pro-image-preview',
-    'gemini-1.5-flash-image',
+    'gemini-2.5-flash-image',
 ];
 
 const getGenAIClient = (location = 'global') => new GoogleGenAI({
