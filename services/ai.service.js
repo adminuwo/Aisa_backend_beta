@@ -75,6 +75,7 @@ export const storeDocument = async (text, docId = null) => {
 };
 
 export const chat = async (message, activeDocContent = null, options = {}) => {
+    logger.info(`[AI-Service] Chat request received. Mode: ${options.mode || 'NORMAL'}`);
     let finalResponseData = { text: "" };
     try {
         if (!message || typeof message !== 'string') {
@@ -82,6 +83,10 @@ export const chat = async (message, activeDocContent = null, options = {}) => {
         }
 
         const { systemInstruction, mode, images, documents, userName, language, conversationId, userId, model, history, toolName } = options;
+        
+        const lowerMsg = message.toLowerCase().trim();
+        const companyKeywords = ['uwo', 'aisa', 'ai mall', 'unified web', 'what can you do', 'your features', 'your capabilities', 'who are you', 'how can you help', 'tell me about your services'];
+        let hasCompanyKeyword = companyKeywords.some(k => lowerMsg.includes(k));
 
         // --- LANGUAGE DETECTION ---
         const detected = detectLanguage(message);
@@ -187,6 +192,7 @@ Maintain any text response outside the JSON block.`;
         let needsRAG = false;
         let rewrittenQuery = message;
         
+
         try {
             const chatSummary = (combinedHistory || []).slice(-3).map(m => `${m.role}: ${m.content || m.text}`).join(' | ');
             
@@ -198,10 +204,6 @@ Maintain any text response outside the JSON block.`;
                     const docCount = await Knowledge.countDocuments();
                     const manualCorpusId = process.env.VERTEX_RAG_CORPUS_ID;
                     if (docCount > 0 || manualCorpusId) {
-                        const lowerMsg = message.toLowerCase().trim();
-                        const companyKeywords = ['uwo', 'aisa', 'ai mall', 'unified web', 'what can you do', 'your features', 'your capabilities', 'who are you', 'how can you help', 'tell me about your services'];
-                        const hasCompanyKeyword = companyKeywords.some(k => lowerMsg.includes(k));
-                        
                         if (mode === 'LEGAL_TOOLKIT') return true;
                         if (hasCompanyKeyword) return true;
                         return await vertexService.detectRAGNeed(message).catch(() => false);
@@ -571,7 +573,7 @@ Rules:
         const response = await vertexService.AskVertexRaw(prompt, { 
             maxOutputTokens: 150, 
             temperature: 0.7,
-            modelOverride: 'gemini-1.5-flash' 
+            modelOverride: 'gemini-2.5-flash' 
         });
         
         const cleanJson = response.replace(/```json\s*|\s*```/g, '').trim();
@@ -607,7 +609,7 @@ Title:`;
         const title = await vertexService.AskVertexRaw(fullPrompt, {
             maxOutputTokens: 50,
             temperature: 0.1,
-            modelOverride: 'gemini-1.5-flash'
+            modelOverride: 'gemini-2.5-flash'
         });
 
         // Log raw response

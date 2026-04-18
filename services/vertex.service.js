@@ -219,7 +219,7 @@ export const rewriteQuery = async (userQuestion) => {
         const rewriteResult = await AskVertexRaw(rewritePrompt, { 
             maxOutputTokens: 200, 
             temperature: 0.2,
-            modelOverride: 'gemini-1.5-flash-002'
+            modelOverride: 'gemini-2.5-flash'
         });
         
         const cleanedQuery = rewriteResult.trim().replace(/^["']|["']$/g, '');
@@ -265,7 +265,7 @@ export const detectRAGNeed = async (query) => {
         const detectorPrompt = detectorTemplate.replace('{query}', query);
 
         const result = await AskVertexRaw(detectorPrompt, { 
-            modelOverride: 'gemini-1.5-flash-002',
+            modelOverride: 'gemini-2.5-flash',
             maxOutputTokens: 10,
             temperature: 0.1 
         });
@@ -348,8 +348,9 @@ export const AskVertexRaw = async (prompt, options = {}) => {
         logger.error(`[AskVertexRaw] FULL ERROR: ${err.message}`);
         if (err.stack) logger.debug(`[AskVertexRaw] Stack Trace: ${err.stack}`);
         if ((err.message.includes("404") || err.message.includes("NOT_FOUND")) && !options.isFallback) {
-            logger.warn(`[AskVertexRaw] Model ${options.modelOverride || modelName} not found. Falling back to gemini-1.5-pro...`);
-            return AskVertexRaw(prompt, { ...options, modelOverride: 'gemini-1.5-pro', isFallback: true });
+            logger.warn(`[AskVertexRaw] Model ${options.modelOverride || modelName} not found in asia-south1. Check model availability.`);
+            // Do NOT fallback to gemini-1.5-pro — not available in asia-south1
+            throw err;
         }
         
         throw err;
@@ -471,8 +472,9 @@ export const askVertex = async (prompt, context = null, options = {}) => {
         
         // Specific error for model not found 
         if ((error.message.includes("404") || error.message.includes("NOT_FOUND")) && !options.isFallback) {
-            logger.warn(`[VERTEX] Model ${modelName} NOT_FOUND in region. Falling back to gemini-1.5-pro...`);
-            return askVertex(prompt, context, { ...options, modelOverride: 'gemini-1.5-pro', isFallback: true });
+            logger.warn(`[VERTEX] Model ${modelName} NOT_FOUND in asia-south1. Check model availability.`);
+            // Do NOT fallback to gemini-1.5-pro — not available in asia-south1
+            throw error;
         }
 
         // Fallback for safety blocks or specific quota issues
