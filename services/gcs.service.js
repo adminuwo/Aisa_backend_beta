@@ -19,14 +19,17 @@ try {
     storage = new Storage({ 
         projectId: process.env.GCP_PROJECT_ID || 'ai-mall-484810',
         universe_domain: 'googleapis.com',
-        // Optional: Explicity use IAM credentials API for signing if ADC cannot natively sign
-        // impersonatedServiceAccount: TARGET_PRINCIPAL 
+        // Enable impersonated signing
+        impersonatedServiceAccount: TARGET_PRINCIPAL 
     });
     
     bucket = storage.bucket(BUCKET_NAME);
-    logger.info(`[GCS] Storage initialized with ADC explicitly configured for universe_domain`);
+    logger.info(`[GCS] Storage initialized with Impersonation for ${TARGET_PRINCIPAL}`);
 } catch (error) {
     logger.error(`[GCS] Failed to initialize storage: ${error.message}`);
+    // Fallback if impersonation fails
+    storage = new Storage({ projectId: process.env.GCP_PROJECT_ID || 'ai-mall-484810' });
+    bucket = storage.bucket(BUCKET_NAME);
 }
 
 /**

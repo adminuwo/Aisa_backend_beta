@@ -98,10 +98,10 @@ router.post("/", optionalVerifyToken, identifyGuest, async (req, res) => {
             let extractedText = "";
             
             if (isWord) {
-              const parser = (officeParser && officeParser.parsePromise) ? officeParser : (officeParser?.default || officeParser);
+              const parser = (officeParser && officeParser.parseOfficeAsync) ? officeParser : (officeParser?.default || officeParser);
               try {
-                if (parser && typeof parser.parsePromise === 'function') {
-                  extractedText = await parser.parsePromise(buffer);
+                if (parser && typeof parser.parseOfficeAsync === 'function') {
+                  extractedText = await parser.parseOfficeAsync(buffer);
                 } else {
                   throw new Error("officeParser not properly loaded");
                 }

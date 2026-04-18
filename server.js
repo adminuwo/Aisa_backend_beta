@@ -135,7 +135,6 @@ app.use('/api/legal-toolkit', legalToolkitRoutes);
 
 // Intelligence Features
 app.use('/api/chat', chatRoutes);
-app.use('/api', chatRoutes); // Allow /api/public/share/... to work via chatRoutes
 app.use('/api/agents', agentRoutes);
 app.use('/api/voice', voiceRoutes);
 app.use('/api/image', imageRoutes);
@@ -175,6 +174,9 @@ app.use('/api/admin', adminRoutes);
 
 // Projects
 app.use('/api/projects', projectRoutes);
+
+// Fallback for chat routes (e.g. /api/public/share/...)
+app.use('/api', chatRoutes);
 
 
 // AIBASE (V3) - With Credit System

@@ -455,9 +455,9 @@ DO NOT include any prefix. Keep it under 80 words for maximum impact.`,
             if (!existing) {
                 logger.info(`[ConfigService] Seeding default config for: ${config.key}`);
                 existing = await SystemConfig.create(config);
-            } else if (config.key === 'AISA_CONVERSATIONAL_RULES' && (!existing.value.includes('STRICT VISUAL HIERARCHY'))) {
-                // Feature push: Update rules to include new Formatting logic
-                logger.info(`[ConfigService] Updating ${config.key} to include new rules (Strict Visual Hierarchy).`);
+            } else if (config.key === 'AISA_CONVERSATIONAL_RULES' && (!existing.value.includes('CONVERSATIONAL FORMATTING'))) {
+                // Feature push: Update rules to include new Conversational/ChatGPT Style logic
+                logger.info(`[ConfigService] Updating ${config.key} to include new rules (Conversational Formatting).`);
                 existing.value = config.value;
                 existing.lastUpdated = Date.now();
                 await existing.save();

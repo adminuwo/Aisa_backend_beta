@@ -218,7 +218,8 @@ export const rewriteQuery = async (userQuestion) => {
         
         const rewriteResult = await AskVertexRaw(rewritePrompt, { 
             maxOutputTokens: 200, 
-            temperature: 0.2 
+            temperature: 0.2,
+            modelOverride: 'gemini-1.5-flash'
         });
         
         const cleanedQuery = rewriteResult.trim().replace(/^["']|["']$/g, '');
@@ -263,7 +264,11 @@ export const detectRAGNeed = async (query) => {
         const detectorTemplate = configService.getConfig('RAG_DETECTOR_PROMPT', 'Needs RAG? {query}');
         const detectorPrompt = detectorTemplate.replace('{query}', query);
 
-        const result = await AskVertexRaw(detectorPrompt);
+        const result = await AskVertexRaw(detectorPrompt, { 
+            modelOverride: 'gemini-1.5-flash',
+            maxOutputTokens: 10,
+            temperature: 0.1 
+        });
         const decision = result.trim().toUpperCase();
         logger.info(`[RAG-Detector] AI Decision for "${query}": ${decision}`);
         

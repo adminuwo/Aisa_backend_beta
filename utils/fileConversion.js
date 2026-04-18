@@ -145,9 +145,9 @@ export async function convertDocxToPdf(docxBuffer) {
 
         let text = "";
         try {
-            const parser = (officeParser && officeParser.parsePromise) ? officeParser : (officeParser?.default || officeParser);
-            if (parser && typeof parser.parsePromise === 'function') {
-                text = await parser.parsePromise(docxBuffer);
+            const parser = (officeParser && officeParser.parseOfficeAsync) ? officeParser : (officeParser?.default || officeParser);
+            if (parser && typeof parser.parseOfficeAsync === 'function') {
+                text = await parser.parseOfficeAsync(docxBuffer);
             }
         } catch (parserErr) {}
 
