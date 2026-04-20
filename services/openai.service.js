@@ -5,11 +5,10 @@ import * as configService from './configService.js';
 
 dotenv.config();
 
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-
 export const askOpenAI = async (prompt, context = null, options = {}) => {
     try {
-        if (!OPENAI_API_KEY) {
+        const apiKey = process.env.OPENAI_API_KEY;
+        if (!apiKey) {
             throw new Error("OPENAI_API_KEY is missing in environment variables.");
         }
 
@@ -73,7 +72,7 @@ Understand the user's expertise level and topic preference implicitly from their
             },
             {
                 headers: {
-                    'Authorization': `Bearer ${OPENAI_API_KEY}`,
+                    'Authorization': `Bearer ${apiKey}`,
                     'Content-Type': 'application/json'
                 },
                 timeout: 60000 // 60s timeout

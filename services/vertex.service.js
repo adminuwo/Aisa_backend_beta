@@ -219,7 +219,7 @@ export const rewriteQuery = async (userQuestion) => {
         const rewriteResult = await AskVertexRaw(rewritePrompt, { 
             maxOutputTokens: 200, 
             temperature: 0.2,
-            modelOverride: 'gemini-2.5-flash'
+            modelOverride: 'gemini-1.5-flash'
         });
         
         const cleanedQuery = rewriteResult.trim().replace(/^["']|["']$/g, '');
@@ -265,7 +265,7 @@ export const detectRAGNeed = async (query) => {
         const detectorPrompt = detectorTemplate.replace('{query}', query);
 
         const result = await AskVertexRaw(detectorPrompt, { 
-            modelOverride: 'gemini-2.5-flash',
+            modelOverride: 'gemini-1.5-flash',
             maxOutputTokens: 10,
             temperature: 0.1 
         });

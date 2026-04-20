@@ -7,15 +7,27 @@ import { askVertex } from '../services/vertex.service.js';
 
 dotenv.config();
 
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-
 /**
  * Detects if a query requires real-time information.
  * Uses a small model to save costs.
  */
 export const shouldSearch = async (query) => {
     try {
-        if (!OPENAI_API_KEY) return false;
+        const lower = query.toLowerCase();
+        
+        // Fast-pass: Check for common real-time keywords to skip AI detection and save time
+        const searchKeywords = [
+            'today', 'match', 'score', 'weather', 'price', 'news', 'latest', 'live', 
+            'stock', 'cricket', 'ipl', 'football', 'result', 'upcoming'
+        ];
+        
+        if (searchKeywords.some(keyword => lower.includes(keyword))) {
+            logger.info(`[WebSearch] Fast-pass YES for: "${query}"`);
+            return true;
+        }
+
+        const apiKey = process.env.OPENAI_API_KEY;
+        if (!apiKey) return false;
 
         const response = await axios.post(
             'https://api.openai.com/v1/chat/completions',
@@ -36,7 +48,7 @@ export const shouldSearch = async (query) => {
             },
             {
                 headers: {
-                    'Authorization': `Bearer ${OPENAI_API_KEY}`,
+                    'Authorization': `Bearer ${apiKey}`,
                     'Content-Type': 'application/json'
                 }
             }
@@ -61,7 +73,8 @@ export const performSearch = async (query, userLanguage = 'English') => {
         const currentDate = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'full', timeStyle: 'short' });
         const targetLang = userLanguage === 'Hinglish' ? 'Hinglish (Romanized Hindi)' : userLanguage;
 
-        if (!OPENAI_API_KEY) {
+        const apiKey = process.env.OPENAI_API_KEY;
+        if (!apiKey) {
             logger.error('[WebSearch] OPENAI_API_KEY is missing!');
             return null;
         }
@@ -87,7 +100,7 @@ export const performSearch = async (query, userLanguage = 'English') => {
             },
             {
                 headers: {
-                    'Authorization': `Bearer ${OPENAI_API_KEY}`,
+                    'Authorization': `Bearer ${apiKey}`,
                     'Content-Type': 'application/json'
                 },
                 timeout: 90000 // 90s timeout for search

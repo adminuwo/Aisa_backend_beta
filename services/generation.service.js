@@ -12,6 +12,7 @@ import GeneratedAsset from '../models/GeneratedAsset.js';
 import GenerationJob from '../models/GenerationJob.js';
 import GenerationPromptLog from '../models/GenerationPromptLog.js';
 import mongoose from 'mongoose';
+import { generateImageFromPrompt } from '../controllers/image.controller.js';
 
 // --- JSON RECOVERY SYSTEM ---
 function safeParse(content) {
@@ -524,7 +525,7 @@ const updateUsage = (usage, type) => {
 };
 
 // --- REAL IMAGE GENERATION (AI Ads Agent pipeline) ---
-import { generateImageFromPrompt } from '../controllers/image.controller.js';
+
 
 /**
  * AI ADS AGENT — VISUAL POST GENERATION PIPELINE
