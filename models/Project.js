@@ -34,6 +34,16 @@ const projectSchema = new mongoose.Schema({
     isLegalCase: {
         type: Boolean,
         default: false
+    },
+    caseType: {
+        type: String,
+        trim: true,
+        default: ''
+    },
+    accused: {
+        type: String,
+        trim: true,
+        default: ''
     }
 }, { 
     timestamps: true 

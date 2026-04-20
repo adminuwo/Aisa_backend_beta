@@ -87,7 +87,7 @@ Output: "A golden retriever dog playing on a sunny beach, golden hour lighting, 
 
         logger.info(`[PromptEnhancer] Enhancing ${mediaType} prompt via LLM...`);
         const response = await client.models.generateContent({
-            model: 'gemini-1.5-flash',
+            model: 'gemini-2.5-flash',
             contents: [{ role: 'user', parts: [{ text: `User Prompt: "${normalizedPrompt}"\n\nAdd visual quality descriptors. KEEP the exact subject. Return enhanced prompt only.` }] }],
             config: {
                 systemInstruction: systemInstruction,

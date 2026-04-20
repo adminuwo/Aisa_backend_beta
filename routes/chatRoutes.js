@@ -773,12 +773,15 @@ router.post('/duplicate', optionalVerifyToken, identifyGuest, async (req, res) =
 });
 
 // --- GET SHARED SESSION (PUBLIC) ---
-router.get('/public/share/:shareId', async (req, res) => {
+router.get('/share/:shareId', async (req, res) => {
   try {
     const { shareId } = req.params;
+    console.log(`[SHARE] Accessing shared chat: ${shareId}`);
  
-    const session = await ChatSession.findOne({ shareId, isShared: true });
-    if (!session) return res.status(404).json({ error: 'Shared chat not found or no longer public' });
+    const session = await ChatSession.findOne({ shareId });
+    if (!session || !session.isShared) {
+      return res.status(404).json({ error: 'Shared chat not found' });
+    }
  
     // Return only necessary fields for public view
     const publicSession = {
