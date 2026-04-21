@@ -194,7 +194,16 @@ Maintain any text response outside the JSON block.`;
         
 
         try {
-            const chatSummary = (combinedHistory || []).slice(-3).map(m => `${m.role}: ${m.content || m.text}`).join(' | ');
+            // Strip [ACTIVE TOOL: ...] prefixes and legal disclaimers from history
+            // to prevent prior legal-mode context from poisoning the intent classifier
+            const chatSummary = (combinedHistory || []).slice(-3).map(m => {
+                let text = m.content || m.text || '';
+                // Remove [ACTIVE TOOL: ...] header (bold markdown variant too)
+                text = text.replace(/^\*?\*?\[ACTIVE TOOL:[^\]]*\]\*?\*?\s*/i, '');
+                // Remove legal disclaimer footer
+                text = text.replace(/⚖️ \*\*Legal Disclaimer:\*\*.*$/is, '');
+                return `${m.role}: ${text.trim()}`;
+            }).join(' | ');
             
             // Run independent pre-processing tasks in parallel
             const [intentResult, ragDecision] = await Promise.all([
@@ -224,8 +233,10 @@ Maintain any text response outside the JSON block.`;
         }
 
         let legalInstruction = "";
-        if (classification && classification.intent && classification.intent.startsWith('legal_')) {
-            const isRedundant = mode === 'LEGAL_TOOLKIT' && (toolName === classification?.intent);
+        // CRITICAL GUARD: Only auto-inject legal prompt if user is explicitly in LEGAL_TOOLKIT mode.
+        // Prevents intent classifier from accidentally triggering the legal persona in normal chat.
+        if (mode === 'LEGAL_TOOLKIT' && classification && classification.intent && classification.intent.startsWith('legal_')) {
+            const isRedundant = toolName === classification?.intent;
             if (!isRedundant) {
                logger.info(`[AI-Service] Legal Intent Detected: ${classification.intent}.`);
                legalInstruction = `\n\n### SPECIALIZED LEGAL TOOL: ${classification.intent}\n${getLegalPrompt(classification.intent)}`;

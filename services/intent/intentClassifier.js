@@ -42,7 +42,7 @@ ${toolList}
 6. You MUST handle Hinglish, Hindi, Arabic, and all major world languages — detect and note the language.
 7. For image+video combos ("edit this image" with attachment), prefer image_edit or image_to_video over text_to_image.
 8. "Make a video with music" = text_to_video + text_to_audio (two separate tools, listed in order).
-9. If the user asks a general legal question, explains a situation, or asks about a law without requesting a specific advanced task (like drafting, analysis, or prediction), use legal_free_chat.
+9. ONLY use legal_free_chat if the user EXPLICITLY asks for legal advice, mentions a specific law/court, or describes a very clear legal dispute. Do NOT use legal_free_chat for generic questions (e.g. "what is a computer", "how to cook rice", IT/tech support), simple definitions, or ambiguous acronyms (like CS, IT, etc).
 10. **LEGAL SMART SUGGESTIONS**: If the intent is legal (starts with legal_), you MUST provide 2-3 extra relevant tool IDs in the "suggestions" array that could help the user further.
     - Example: User wants a "Legal Notice for non-payment" -> intent: legal_notice_generator, suggestions: ["legal_evidence_checker", "legal_case_predictor", "legal_strategy_engine"].
     - Example: User asks "Is this contract safe?" -> intent: legal_contract_analyzer, suggestions: ["legal_clause_scanner", "legal_clause_rewriter"].
