@@ -55,7 +55,7 @@ import { getConfig, getFullSystemInstruction } from '../services/configService.j
 // Model name - Set strictly to user's explicit request
 // Model name - Set to gemini-1.5-flash for maximum speed. 
 // Note: 'gemini-2.5-flash' is not a valid model name and causes errors/slowness.
-export const modelName = "gemini-1.5-flash";
+export const modelName = "gemini-2.5-flash";
 
 /**
  * Dynamic System Instruction Getter
