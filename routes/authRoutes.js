@@ -262,7 +262,7 @@ router.post("/login", async (req, res) => {
 /**
  * Common handler to find or create a user after any social authentication
  */
-const handleSocialUser = async (profile, res, isRedirect = true) => {
+const handleSocialUser = async (profile, req, res, isRedirect = true) => {
   const { email, name, picture, provider, providerId } = profile;
 
   if (!email) {
@@ -824,7 +824,7 @@ router.post("/apple/callback", async (req, res) => {
       picture: `https://ui-avatars.com/api/?name=${encodeURIComponent(name || 'Apple User')}&background=000&color=fff`
     };
 
-    return handleSocialUser(profile, res);
+    return handleSocialUser(profile, req, res);
 
   } catch (err) {
     console.error(`[Apple Auth Overall Error]:`, err.message);
@@ -878,7 +878,7 @@ router.get("/:provider/callback", async (req, res) => {
     if (!profile) throw new Error("Could not retrieve user profile from provider");
 
     // 3. Process User in DB & Redirect
-    return handleSocialUser(profile, res);
+    return handleSocialUser(profile, req, res);
 
   } catch (err) {
     console.error(`[Callback Error] ${provider}:`, err.message);
@@ -893,8 +893,7 @@ router.post("/google", async (req, res) => {
     let profile = { email, name, picture, provider: 'google' };
 
     if (credential) {
-      const axiosClient = (await import('axios')).default;
-      const userInfoRes = await axiosClient.get('https://www.googleapis.com/oauth2/v3/userinfo', {
+      const userInfoRes = await axios.get('https://www.googleapis.com/oauth2/v3/userinfo', {
         headers: { Authorization: `Bearer ${credential}` }
       });
       profile.email = userInfoRes.data.email;
@@ -903,8 +902,9 @@ router.post("/google", async (req, res) => {
       profile.providerId = userInfoRes.data.sub;
     }
 
-    return handleSocialUser(profile, res, false);
+    return handleSocialUser(profile, req, res, false);
   } catch (error) {
+    console.error("[Google Auth POST Error]:", error);
     res.status(500).json({ error: "Google Authentication failed" });
   }
 });
@@ -914,7 +914,7 @@ router.post("/social-login", async (req, res) => {
   if (!provider || !providerId) {
     return res.status(400).json({ error: "Provider info is missing" });
   }
-  return handleSocialUser({ email, name, picture, provider, providerId }, res, false);
+  return handleSocialUser({ email, name, picture, provider, providerId }, req, res, false);
 });
 
 
