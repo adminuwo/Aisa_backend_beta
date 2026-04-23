@@ -87,7 +87,7 @@ Output: "A golden retriever dog playing on a sunny beach, golden hour lighting, 
 
         logger.info(`[PromptEnhancer] Enhancing ${mediaType} prompt via LLM...`);
         const response = await client.models.generateContent({
-            model: 'gemini-2.5-flash',
+            model: 'gemini-1.5-flash',
             contents: [{ role: 'user', parts: [{ text: `User Prompt: "${normalizedPrompt}"\n\nAdd visual quality descriptors. KEEP the exact subject. Return enhanced prompt only.` }] }],
             config: {
                 systemInstruction: systemInstruction,
@@ -158,8 +158,7 @@ export const executeVideoPipeline = async (rawPrompt, generateFunction, context)
 
     // Define fallback models
     const fallbackMap = {
-        'veo-3.1-fast-generate-001': 'veo-3.1-generate-001',
-        'veo-3.1-generate-001': 'veo-3.1-fast-generate-001'
+        'imagen-3.0-generate-001': 'imagen-3.0-generate-001',
     };
 
     while (attempt <= maxRetries) {
@@ -219,8 +218,7 @@ export const executeImagePipeline = async (rawPrompt, generateFunction, context)
     let lastError = null;
     
     const fallbackMap = {
-        'imagen-3.0-generate-001': 'imagen-3.0-generate-002', // Clean Imagen fallback
-        'imagen-4.0-ultra-generate-001': 'imagen-3.0-generate-001'
+        'imagen-3.0-generate-001': 'imagen-3.0-generate-001',
     };
 
     while (attempt <= maxRetries) {

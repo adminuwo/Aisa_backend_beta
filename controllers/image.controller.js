@@ -23,7 +23,7 @@ const getGenAIClient = (location = 'global') => new GoogleGenAI({
     location,
 });
 
-export const generateImageFromPrompt = async (prompt, originalImage = null, aspectRatio = '1:1', selectedModelId = 'gemini-3.1-flash-image-preview', manualEditMode = null) => {
+export const generateImageFromPrompt = async (prompt, originalImage = null, aspectRatio = '1:1', selectedModelId = 'gemini-2.5-flash-image', manualEditMode = null) => {
     try {
         console.log(`[VERTEX IMAGE] Triggered for: "${prompt}" (Edit: ${!!originalImage}, Ratio: ${aspectRatio}, Model: ${selectedModelId})`);
 
@@ -37,7 +37,7 @@ export const generateImageFromPrompt = async (prompt, originalImage = null, aspe
         let usedModel = selectedModelId;
 
         if (!GEMINI_IMAGE_MODELS.includes(usedModel)) {
-            usedModel = 'gemini-3.1-flash-image-preview'; // default
+            usedModel = 'gemini-2.5-flash'; // default
         }
 
         const client = getGenAIClient('global');
@@ -45,10 +45,10 @@ export const generateImageFromPrompt = async (prompt, originalImage = null, aspe
         if (originalImage) {
             // EDIT ARCHITECTURE
             console.log(`[Gemini GenAI SDK] Editing with model: ${usedModel} | Prompt: "${prompt}"`);
-            
+
             // Extract base64 part if it's a data url
-            const imageBytes = originalImage.includes('base64,') 
-                ? originalImage.split('base64,')[1] 
+            const imageBytes = originalImage.includes('base64,')
+                ? originalImage.split('base64,')[1]
                 : originalImage;
 
             const response = await client.models.generateContent({
@@ -177,13 +177,13 @@ export const generateImage = async (req, res, next) => {
         }
 
         const isPremium = req.user?.isPremium || false;
-        
+
         // 1. Resolve optimal model using selector
         const resolvedModelId = selectImageModel(modelId, quality, isPremium);
 
         // 2. Execute via Pipeline (Handles enhancement, retries, and fallback)
         const pipelineResult = await executeImagePipeline(
-            prompt, 
+            prompt,
             async (finalPrompt, activeModel) => {
                 // Wrapper for the actual generation logic
                 return await generateImageFromPrompt(finalPrompt, null, aspectRatio, activeModel);
@@ -205,8 +205,8 @@ export const generateImage = async (req, res, next) => {
             await subscriptionService.deductCreditsFromMeta(req.creditMeta);
         }
 
-        res.status(200).json({ 
-            success: true, 
+        res.status(200).json({
+            success: true,
             data: imageUrl,
             refinedPrompt: pipelineResult.finalPrompt,
             modelUsed: pipelineResult.modelId,
@@ -242,7 +242,7 @@ export const proxyImage = async (req, res) => {
 
         res.setHeader('Content-Type', response.headers['content-type'] || 'image/png');
         res.setHeader('Access-Control-Allow-Origin', '*'); // Ensure CORS is allowed for this proxy
-        
+
         response.data.pipe(res);
     } catch (err) {
         console.error(`[Image Proxy Error]: ${err.message}. ${err.response ? 'Status: ' + err.response.status : ''}`);

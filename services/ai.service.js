@@ -17,7 +17,7 @@ import userIntelligenceService from './userIntelligence.service.js';
 import * as configService from './configService.js';
 import { detectLanguage } from '../utils/languageDetector.js';
 import { classifyIntent } from './intent/intentClassifier.js';
-import { getLegalPrompt, LEGAL_DISCLAIMER } from './legal/legalPrompts.js';
+import { getLegalPrompt, LEGAL_DISCLAIMER } from '../Tools/AI_Legal/legalPrompts.js';
 
 
 // Real RAG Storage (MongoDB Atlas)
@@ -564,22 +564,39 @@ export const reloadVectorStore = async () => {
 
 export const generateRelatedQuestions = async (userMessage, aiResponse, language = 'English', mode = 'GENERAL') => {
     try {
-        const prompt = `Based on the following conversation, generate exactly 3 highly intelligent, context-aware, and creative follow-up questions that the user might want to ask next.
-        
-User Message: "${userMessage}"
-AI Response: "${aiResponse}"
-Mode: ${mode}
+        const prompt = `You are a smart suggestion engine for an AI assistant.
+        Your job is to generate highly relevant follow-up suggestions based ONLY on the conversation context.
 
-Rules:
-- Suggestions must be highly specific to the context of the conversation.
-- If Mode is LEGAL_TOOLKIT, suggest specific legal follow-ups (e.g., draft notice, check evidence, next steps).
-- Each suggestion MUST be a complete, meaningful question or prompt that feels like real user intent.
-- DO NOT use generic phrases like "Explain more", "Give examples", or "Summarize".
-- Be creative and proactive.
-- Keep each suggestion short (6-12 words).
-- Language: Respond in ${language}.
-- Format: Return ONLY a JSON array of strings.
-- Example: ["Can you show a real-world example?", "How can I use this in my project?", "What are the advantages of this approach?"]`;
+        INPUT:
+        - User message: "${userMessage}"
+        - Assistant response: "${aiResponse}"
+        - Mode: ${mode}
+
+        TASK:
+        Generate exactly 3 follow-up suggestions in ${language}.
+
+        STRICT RULES (VERY IMPORTANT):
+        1. CONTEXT-AWARE:
+           - Understand the topic deeply before generating suggestions.
+           - Suggestions MUST relate directly to the current conversation context.
+        2. NO GENERIC SUGGESTIONS (Zero Tolerance):
+           - NEVER return: "Explain in simple terms", "Give examples", "Summarize this", or any reusable phrases.
+           - If you generate generic suggestions → your output is WRONG.
+        3. ACTION-ORIENTED:
+           - Each suggestion must feel like a next step (Ask for detail, Modify output, Compare, Apply, Extend).
+           - If Mode is LEGAL_TOOLKIT, suggest specific legal follow-ups (e.g., draft notice, check evidence, next steps).
+        4. LENGTH:
+           - Each suggestion: 6–12 words only.
+        5. VARIETY:
+           - All 3 suggestions must be different and avoid repeating similar structures.
+        6. LANGUAGE:
+           - Respond ENTIRELY in ${language}.
+
+        OUTPUT FORMAT:
+        Return ONLY a JSON array of strings:
+        ["Suggestion 1", "Suggestion 2", "Suggestion 3"]
+
+        No extra text.`;
 
         const response = await vertexService.AskVertexRaw(prompt, { 
             maxOutputTokens: 200, 
@@ -620,7 +637,7 @@ Title:`;
         const title = await vertexService.AskVertexRaw(fullPrompt, {
             maxOutputTokens: 50,
             temperature: 0.1,
-            modelOverride: 'gemini-2.5-flash'
+            modelOverride: 'gemini-1.5-flash'
         });
 
         // Log raw response

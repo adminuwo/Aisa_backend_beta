@@ -27,6 +27,6 @@ If a user generates **100 AI Ads**:
 *   **Net Profit**: **₹1,088.00**
 
 ## 4. Integration Details
-*   **Model**: `gemini-2.5-flash` (Vertex AI)
+*   **Model**: `gemini-1.5-flash` (Vertex AI)
 *   **Image Engine**: `imagen-3.0-generate-001`
 *   **Credit System**: Managed via `subscriptionService.js` and `creditSystem.js` middleware.

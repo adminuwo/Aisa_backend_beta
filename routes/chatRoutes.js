@@ -183,7 +183,7 @@ router.post("/", optionalVerifyToken, identifyGuest, async (req, res) => {
                 async (finalPrompt, activeModel) => {
                     return await generateImageFromPrompt(finalPrompt, null, aspectRatio || '1:1', activeModel);
                 },
-                { modelId: reqModelId || 'gemini-3.1-flash-image-preview', enhance: true }
+                { modelId: reqModelId || 'gemini-1.5-flash', enhance: true }
             );
             
             if (pipelineResult.url) {
@@ -206,7 +206,7 @@ router.post("/", optionalVerifyToken, identifyGuest, async (req, res) => {
                 async (finalPrompt, activeModel) => {
                     return await generateImageFromPrompt(finalPrompt, sourceImage, aspectRatio || '1:1', activeModel);
                 },
-                { modelId: reqModelId || 'gemini-3.1-flash-image-preview', enhance: true }
+                { modelId: reqModelId || 'gemini-1.5-flash', enhance: true }
             );
 
             if (pipelineResult.url) {

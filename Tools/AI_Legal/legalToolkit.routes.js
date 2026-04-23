@@ -1,11 +1,11 @@
 import express from 'express';
-import { verifyToken } from '../middleware/authorization.js';
-import { creditMiddleware } from '../middleware/creditSystem.js';
-import { generateChatResponse } from '../services/geminiService.js';
-import { getToolByName } from '../services/intent/toolRegistry.js';
-import { getLegalPrompt, LEGAL_DISCLAIMER } from '../services/legal/legalPrompts.js';
-import { subscriptionService } from '../services/subscriptionService.js';
-import logger from '../utils/logger.js';
+import { verifyToken } from '../../middleware/authorization.js';
+import { creditMiddleware } from '../../middleware/creditSystem.js';
+import { generateChatResponse } from '../../services/geminiService.js';
+import { getToolByName } from '../../services/intent/toolRegistry.js';
+import { getLegalPrompt, LEGAL_DISCLAIMER } from './legalPrompts.js';
+import { subscriptionService } from '../../services/subscriptionService.js';
+import logger from '../../utils/logger.js';
 
 const router = express.Router();
 

@@ -19,16 +19,15 @@ import logger from '../utils/logger.js';
  */
 export const selectImageModel = (requestedModelId, quality = 'fast', isPremium = false) => {
     const modelMap = {
-        fast: 'gemini-3.1-flash-image-preview',
-        quality: 'gemini-1.5-flash-image',
-        ultra: 'gemini-3-pro-image-preview'
+        fast: 'gemini-1.5-flash',
+        quality: 'gemini-1.5-flash',
+        ultra: 'gemini-1.5-pro'
     };
 
     // If a valid model was explicitly selected, respect it
     const knownModels = [
-        'gemini-3.1-flash-image-preview',
-        'gemini-3-pro-image-preview',
-        'gemini-1.5-flash-image'
+        'gemini-1.5-flash',
+        'gemini-1.5-pro',
     ];
     
     if (requestedModelId && knownModels.includes(requestedModelId)) {
@@ -61,11 +60,11 @@ export const selectImageModel = (requestedModelId, quality = 'fast', isPremium =
  */
 export const selectVideoModel = (requestedModelId, quality = 'fast', isPremium = false) => {
     const modelMap = {
-        fast: 'veo-3.1-fast-generate-001',
-        cinema: 'veo-3.1-generate-001'
+        fast: 'imagen-3.0-generate-001',
+        cinema: 'imagen-3.0-generate-001'
     };
 
-    const knownModels = ['veo-3.1-fast-generate-001', 'veo-3.1-generate-001'];
+    const knownModels = ['imagen-3.0-generate-001'];
     if (requestedModelId && knownModels.includes(requestedModelId)) {
         // Cinema/Pro model is premium-only
         // if (requestedModelId === 'veo-3.1-generate-001' && !isPremium) {

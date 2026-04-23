@@ -27,11 +27,10 @@ router.post('/', verifyToken, upload.single('image'), creditMiddleware, async (r
 
         // Whitelist of supported edit models
         const ALLOWED_EDIT_MODELS = [
-            'gemini-3.1-flash-image-preview',
-            'gemini-3-pro-image-preview',
-            'gemini-1.5-flash-image'
+            'gemini-1.5-flash',
+            'gemini-1.5-pro',
         ];
-        const selectedModel = ALLOWED_EDIT_MODELS.includes(model) ? model : 'gemini-3.1-flash-image-preview';
+        const selectedModel = ALLOWED_EDIT_MODELS.includes(model) ? model : 'gemini-1.5-flash';
         console.log(`[Magic Image Edit] Using model: ${selectedModel}`);
 
         if (!prompt) {

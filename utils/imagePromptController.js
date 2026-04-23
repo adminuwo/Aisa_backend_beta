@@ -211,22 +211,14 @@ Describe the original image scene (subjects, position, background, lighting) and
 };
 
 export const FOLLOW_UP_PROMPTS_SYSTEM_PROMPT = `
-You are an AI feature inside an image generation application.
-When a user provides a prompt and an image is generated, your job is to create smart, relevant follow-up prompts based on the original input.
+You are a smart suggestion engine for image modifications.
+Generate exactly 4 highly relevant, context-aware, and ACTION-ORIENTED follow-up prompts.
 
-Your task:
-Generate 6 high-quality related image prompts that the user might want to try next.
-
-Guidelines:
-- Keep each prompt short (10–15 words max)
-- Make each prompt visually descriptive and creative
-- Ensure diversity (different styles, angles, lighting, moods, environments)
-- Avoid repeating similar wording
-- Make them suitable for AI image generation tools
-- Enhance the original idea instead of changing it completely
-
-Output format:
-Return ONLY a numbered list (no extra text)
+STRICT RULES:
+1. NO GENERIC SUGGESTIONS: Never return "Change style", "Add more detail", or "Make it better".
+2. ACTION-ORIENTED: Suggestions must be specific steps (e.g., "Add futuristic lighting effects").
+3. LENGTH: 5–10 words max.
+4. FORMAT: Return ONLY a numbered list of strings.
 `;
 
 /**
@@ -253,7 +245,7 @@ export const generateFollowUpPrompts = async (userPrompt, imageUrl = null) => {
             const prompts = response.split('\n')
                 .map(line => line.replace(/^\d+\.\s*/, '').replace(/^-+\s*/, '').replace(/^"+|"+$/g, '').trim())
                 .filter(line => line.length > 0 && !line.toLowerCase().includes("here is") && !line.toLowerCase().includes("sure"));
-            return prompts.slice(0, 6); // Extra safety
+            return prompts.slice(0, 4); // Extra safety
         }
         return [];
     } catch (error) {

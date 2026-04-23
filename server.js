@@ -48,7 +48,7 @@ import mediaProxyRoutes from './routes/mediaProxy.routes.js';
 import brandRoutes from './routes/brandFetch.route.js';
 import cashflowRoutes from './routes/cashflowRoutes.js';
 import stockRoutes from './routes/stockRoutes.js';
-import legalToolkitRoutes from './routes/legalToolkitRoutes.js';
+import legalToolkitRoutes from './Tools/AI_Legal/legalToolkit.routes.js';
 import connectorsRoutes from './routes/connectors.routes.js';
 
 import { startPlanExpiryService } from './services/planExpiryService.js';
