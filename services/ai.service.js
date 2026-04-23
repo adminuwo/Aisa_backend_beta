@@ -564,27 +564,27 @@ export const reloadVectorStore = async () => {
 
 export const generateRelatedQuestions = async (userMessage, aiResponse, language = 'English', mode = 'GENERAL') => {
     try {
-        const prompt = `Based on the following conversation, generate 3 to 4 highly intelligent, context-aware follow-up questions that the user might want to ask next to continue the conversation naturally.
+        const prompt = `Based on the following conversation, generate exactly 3 highly intelligent, context-aware, and creative follow-up questions that the user might want to ask next.
         
 User Message: "${userMessage}"
 AI Response: "${aiResponse}"
 Mode: ${mode}
 
 Rules:
-- Questions must be relevant and helpful.
-- If Mode is LEGAL_TOOLKIT, suggest legal follow-ups (e.g., draft notice, check evidence, next steps).
+- Suggestions must be highly specific to the context of the conversation.
+- If Mode is LEGAL_TOOLKIT, suggest specific legal follow-ups (e.g., draft notice, check evidence, next steps).
 - Each suggestion MUST be a complete, meaningful question or prompt that feels like real user intent.
-- Avoid generic actions like "Explain more", "Give examples", or "Summarize".
+- DO NOT use generic phrases like "Explain more", "Give examples", or "Summarize".
+- Be creative and proactive.
 - Keep each suggestion short (6-12 words).
-- Make them diverse and directly related to the assistant's last response.
 - Language: Respond in ${language}.
 - Format: Return ONLY a JSON array of strings.
 - Example: ["Can you show a real-world example?", "How can I use this in my project?", "What are the advantages of this approach?"]`;
 
         const response = await vertexService.AskVertexRaw(prompt, { 
-            maxOutputTokens: 150, 
-            temperature: 0.7,
-            modelOverride: 'gemini-2.5-flash' 
+            maxOutputTokens: 200, 
+            temperature: 0.8,
+            modelOverride: 'gemini-1.5-flash' 
         });
         
         const cleanJson = response.replace(/```json\s*|\s*```/g, '').trim();

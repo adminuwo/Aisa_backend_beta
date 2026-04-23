@@ -13,6 +13,7 @@ import { uploadToGCS, gcsFilename } from "../services/gcs.service.js";
 import { OAuth2Client } from "google-auth-library";
 import { getSmartAvatar, isGeneratedAvatar } from "../utils/avatarHelper.js";
 import { verifyToken } from "../middleware/authorization.js";
+import { createSession } from "../utils/sessionHelper.js";
 import appleSignin from 'apple-signin-auth';
 
 const router = express.Router();
@@ -187,6 +188,9 @@ router.post("/login", async (req, res) => {
     // Generate token
     const token = generateTokenAndSetCookies(res, user._id, user.email, user.name, userPlan, user.role);
 
+    // Track Session
+    await createSession(user._id, token, req);
+
     // Add welcome notifications if inbox is empty
     if (!user.notificationsInbox || user.notificationsInbox.length === 0) {
       user.notificationsInbox = [
@@ -353,6 +357,9 @@ const handleSocialUser = async (profile, res, isRedirect = true) => {
 
     // Generate JWT
     const token = generateTokenAndSetCookies(res, user._id, user.email, user.name, user.plan, user.role);
+
+    // Track Session
+    await createSession(user._id, token, req);
 
     if (isRedirect) {
       const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";

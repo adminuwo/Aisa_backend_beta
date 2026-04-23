@@ -301,7 +301,7 @@ export const AskVertexRaw = async (prompt, options = {}) => {
             // Use Vertex AI with fresh model (no system instruction for raw calls)
             const { HarmCategory, HarmBlockThreshold } = await import('@google-cloud/vertexai');
             model = vertexAI.getGenerativeModel({
-                model: modelName,
+                model: selectedModelName,
                 safetySettings: [
                     { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH }
                 ],

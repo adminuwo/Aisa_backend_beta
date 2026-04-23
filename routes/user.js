@@ -3,6 +3,8 @@ import userModel from "../models/User.js"
 import mongoose from "mongoose";
 import Subscription from "../models/Subscription.js"
 import { verifyToken } from "../middleware/authorization.js"
+import Session from "../models/Session.js";
+import { createSession } from "../utils/sessionHelper.js";
 
 import { getSmartAvatar, isGeneratedAvatar } from "../utils/avatarHelper.js";
 import uploadMiddleware from "../middlewares/upload.middleware.js";
@@ -262,6 +264,50 @@ route.delete("/avatar", verifyToken, async (req, res) => {
 });
 
 
+
+// GET /api/user/sessions - Get active user sessions
+route.get("/sessions", verifyToken, async (req, res) => {
+    try {
+        const userId = req.user.id || req.user._id;
+        const currentToken = req.headers.authorization?.split(" ")[1] || req.cookies?.token;
+
+        let sessions = await Session.find({ userId }).sort({ lastActive: -1 });
+        
+        // Self-healing: If no sessions exist (old user), create one for the current device
+        if (sessions.length === 0 && currentToken) {
+            await createSession(userId, currentToken, req);
+            sessions = await Session.find({ userId }).sort({ lastActive: -1 });
+        }
+
+        // Mark current session
+        const sessionsWithCurrent = sessions.map(s => ({
+            ...s.toObject(),
+            isCurrent: s.token === currentToken
+        }));
+
+        res.status(200).json(sessionsWithCurrent);
+    } catch (error) {
+        console.error("[FETCH SESSIONS ERROR]", error);
+        res.status(500).json({ error: "Failed to fetch sessions" });
+    }
+});
+
+// DELETE /api/user/sessions/:id - Revoke a specific session (logout device)
+route.delete("/sessions/:id", verifyToken, async (req, res) => {
+    try {
+        const userId = req.user.id || req.user._id;
+        const sessionId = req.params.id;
+
+        const session = await Session.findOne({ _id: sessionId, userId });
+        if (!session) return res.status(404).json({ error: "Session not found" });
+
+        await Session.findByIdAndDelete(sessionId);
+        res.status(200).json({ success: true, message: "Session revoked successfully" });
+    } catch (error) {
+        console.error("[REVOKE SESSION ERROR]", error);
+        res.status(500).json({ error: "Failed to revoke session" });
+    }
+});
 
 // GET /api/user/subscription - Get user subscription and usage status
 route.get("/subscription", verifyToken, async (req, res) => {
