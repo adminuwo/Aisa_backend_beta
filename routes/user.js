@@ -170,7 +170,7 @@ route.put("/profile", verifyToken, async (req, res) => {
             });
         }
 
-        const user = await userModel.findByIdAndUpdate(userId, { name }, { new: true });
+        const user = await userModel.findByIdAndUpdate(userId, { name }, { new: true }).select("-password");
         if (!user) return res.status(404).json({ error: "User not found" });
 
         res.status(200).json(user);
