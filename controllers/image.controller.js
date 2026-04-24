@@ -15,6 +15,7 @@ const GEMINI_IMAGE_MODELS = [
     'gemini-2.5-flash-image',
     'gemini-3.1-flash-image-preview',
     'gemini-3-pro-image-preview',
+    'gemini-2.5-flash-image',
 ];
 
 const DEFAULT_IMAGE_MODEL = 'gemini-2.5-flash-image';
@@ -25,11 +26,7 @@ const getGenAIClient = () => new GoogleGenAI({
     location: 'global', // Image models require global endpoint
 });
 
-// ------------------------------------------------------------------
-// Core image generation & editing function
-// model is passed from the frontend card selection and used directly
-// ------------------------------------------------------------------
-export const generateImageFromPrompt = async (prompt, originalImage = null, aspectRatio = '1:1', selectedModelId = DEFAULT_IMAGE_MODEL) => {
+export const generateImageFromPrompt = async (prompt, originalImage = null, aspectRatio = '1:1', selectedModelId = 'gemini-2.5-flash-image', manualEditMode = null) => {
     try {
         if (!process.env.GCP_PROJECT_ID) {
             throw new Error('Missing GCP_PROJECT_ID in environment');

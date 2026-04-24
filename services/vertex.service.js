@@ -209,9 +209,10 @@ export const retrieveContextFromRag = async (query, topK = 8, category = 'LEGAL'
 };
 
 /**
- * Rewrites user message into an optimized search query using Gemini
+ * Combined RAG Detection and Query Rewriting
+ * Reduces latency by performing both tasks in a single LLM call.
  */
-export const rewriteQuery = async (userQuestion) => {
+export const analyzeRAGRequirements = async (query) => {
     try {
         const rewriteTemplate = configService.getConfig('QUERY_REWRITE_PROMPT', 'Rewrite the user question for search: {user_question}');
         const rewritePrompt = rewriteTemplate.replace('{user_question}', userQuestion);
@@ -219,15 +220,15 @@ export const rewriteQuery = async (userQuestion) => {
         const rewriteResult = await AskVertexRaw(rewritePrompt, { 
             maxOutputTokens: 200, 
             temperature: 0.2,
-            modelOverride: 'gemini-2.5-flash'
+            modelOverride: 'gemini-1.5-flash'
         });
         
         const cleanedQuery = rewriteResult.trim().replace(/^["']|["']$/g, '');
         logger.info(`[QueryRewrite] Original: "${userQuestion}" -> Rewritten: "${cleanedQuery}"`);
         return cleanedQuery;
     } catch (error) {
-        logger.error(`[QueryRewrite] Error: ${error.message}`);
-        return userQuestion; // Fallback to original
+        logger.error(`[RAG-Analyzer] Error: ${error.message}`);
+        return { needsRAG: false, rewrittenQuery: query };
     }
 };
 
@@ -265,7 +266,7 @@ export const detectRAGNeed = async (query) => {
         const detectorPrompt = detectorTemplate.replace('{query}', query);
 
         const result = await AskVertexRaw(detectorPrompt, { 
-            modelOverride: 'gemini-2.5-flash',
+            modelOverride: 'gemini-1.5-flash',
             maxOutputTokens: 10,
             temperature: 0.1 
         });
@@ -431,7 +432,7 @@ export const askVertex = async (prompt, context = null, options = {}) => {
                 ],
                 generationConfig: {
                     maxOutputTokens: 4096,
-                    responseMimeType: (systemInstruction && systemInstruction.includes("JSON")) ? "application/json" : "text/plain"
+                    responseMimeType: (systemInstruction && (systemInstruction.includes("JSON") || options.isJson)) ? "application/json" : "text/plain"
                 },
                 systemInstruction: systemInstruction,
                 tools: options.useSearch ? [{ googleSearchRetrieval: {} }] : []
