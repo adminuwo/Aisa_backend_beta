@@ -62,14 +62,38 @@ const getActionLabel = (url, body) => {
     if (url.includes('/api/brand/fetch') || url.includes('/api/brand/quick-analysis')) return { action: 'gemini_flash', description: 'AI Ads Agent (Website Scrapping)' };
     return { action: 'other', description: 'AISA Feature' };
 };
+// In-memory cache to prevent duplicate charges within a short window (e.g. 3 seconds)
+const recentRequests = new Map();
 
 export const creditMiddleware = async (req, res, next) => {
     if (!req.user) {
         return res.status(401).json({ error: "Unauthorized access" });
     }
 
-    let cost = 0;
     const url = req.originalUrl || req.url;
+    const basePath = url.split('?')[0];
+    const actionLabel = getActionLabel(url, req.body);
+    const action = actionLabel.action;
+    const symbol = req.query?.symbol || req.body?.symbol || '';
+    const userId = req.user.id || req.user._id;
+    const dedupKey = `${userId}:${action}:${basePath}:${symbol}`;
+
+    // Clean up cache periodically (very simple)
+    if (recentRequests.size > 2000) recentRequests.clear();
+
+    const lastRequestTime = recentRequests.get(dedupKey);
+    const now = Date.now();
+
+    if (lastRequestTime && (now - lastRequestTime < 3000)) {
+        console.log(`[CreditSystem] Deduplication triggered for ${dedupKey}. Skipping double charge.`);
+        req.creditMeta = null; // Signal to controllers to skip deduction
+        return next();
+    }
+
+    // Update timestamp for this request
+    recentRequests.set(dedupKey, now);
+
+    let cost = 0;
     let isPremiumEndpoint = false;
 
     // ── FREE TIER GUARD ──────────────────────────────────────────────────────
@@ -127,8 +151,7 @@ export const creditMiddleware = async (req, res, next) => {
     }
     // ── END STARTER & FOUNDER VIDEO GUARD ────────────────────────────────────
 
-    const actionLabel = getActionLabel(url, req.body);
-    const action = actionLabel.action;
+    // const actionLabel = getActionLabel(url, req.body); // Already fetched above
     let calculatedCost = 0;
 
     try {
