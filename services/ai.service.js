@@ -206,28 +206,14 @@ Maintain any text response outside the JSON block.`;
             }).join(' | ');
             
             // Run independent pre-processing tasks in parallel
-            const [intentResult, ragDecision] = await Promise.all([
+            const [intentResult, ragResult] = await Promise.all([
                 classifyIntent(message, images || documents || [], chatSummary).catch(() => null),
-                // Only detect RAG if we have documents or might need company info
-                (async () => {
-                    const docCount = await Knowledge.countDocuments();
-                    const manualCorpusId = process.env.VERTEX_RAG_CORPUS_ID;
-                    if (docCount > 0 || manualCorpusId) {
-                        if (mode === 'LEGAL_TOOLKIT') return true;
-                        if (hasCompanyKeyword) return true;
-                        return await vertexService.detectRAGNeed(message).catch(() => false);
-                    }
-                    return false;
-                })()
+                vertexService.analyzeRAGRequirements(message).catch(() => ({ needsRAG: false, rewrittenQuery: message }))
             ]);
 
             classification = intentResult;
-            needsRAG = ragDecision;
-
-            // Trigger parallel rewrite if RAG is needed
-            if (needsRAG) {
-                rewrittenQuery = await vertexService.rewriteQuery(message).catch(() => message);
-            }
+            needsRAG = ragResult.needsRAG;
+            rewrittenQuery = ragResult.rewrittenQuery;
         } catch (preProcessErr) {
             logger.warn(`[AI-Service] Pre-processing failed: ${preProcessErr.message}`);
         }
@@ -481,29 +467,19 @@ Maintain any text response outside the JSON block.`;
             });
         }
 
-        // --- Generate Related Questions (Async but awaited for final response) ---
-        let suggestions = [];
-        try {
-            suggestions = await generateRelatedQuestions(message, finalResponseData.text, userLanguage, mode);
-        } catch (suggestionErr) {
-            logger.error(`[RelatedQuestions] Failed: ${suggestionErr.message}`);
-        }
+        // --- Generate Related Questions (Non-blocking background task) ---
+        // We no longer await this to ensure the main chat response is returned as fast as possible.
+        generateRelatedQuestions(message, finalResponseData.text, userLanguage, mode).then(suggestions => {
+            if (suggestions && suggestions.length > 0) {
+                logger.info(`[RelatedQuestions] Generated ${suggestions.length} suggestions in background.`);
+            }
+        }).catch(err => logger.error(`[RelatedQuestions] Background task failed: ${err.message}`));
 
         // --- ENHANCED FALLBACK SUGGESTIONS (Per user request) ---
         const GENERAL_FALLBACKS = ["Explain in simple terms", "Give examples", "Summarize this"];
         const LEGAL_FALLBACKS = ["Draft a legal notice", "Explain my rights", "Check for risks"];
         
-        const fallbacks = (mode === 'LEGAL_TOOLKIT' || legalInstruction) ? LEGAL_FALLBACKS : GENERAL_FALLBACKS;
-
-        if (!suggestions || suggestions.length === 0) {
-            suggestions = fallbacks;
-        } else if (suggestions.length < 3) {
-            // Fill up to 3 if AI was lazy
-            const remaining = fallbacks.filter(f => !suggestions.includes(f));
-            suggestions = [...suggestions, ...remaining].slice(0, 3);
-        }
-
-        finalResponseData.suggestions = suggestions;
+        finalResponseData.suggestions = (mode === 'LEGAL_TOOLKIT' || legalInstruction) ? LEGAL_FALLBACKS : GENERAL_FALLBACKS;
 
         // --- POST-PROCESSING: Handle Legal Disclaimers & Cleanup ---
         if (finalResponseData.text && (mode === 'LEGAL_TOOLKIT' || legalInstruction)) {
@@ -601,7 +577,8 @@ export const generateRelatedQuestions = async (userMessage, aiResponse, language
         const response = await vertexService.AskVertexRaw(prompt, { 
             maxOutputTokens: 200, 
             temperature: 0.8,
-            modelOverride: 'gemini-1.5-flash' 
+            modelOverride: 'gemini-2.5-flash',
+            location: 'asia-south1'
         });
         
         const cleanJson = response.replace(/```json\s*|\s*```/g, '').trim();
@@ -637,7 +614,7 @@ Title:`;
         const title = await vertexService.AskVertexRaw(fullPrompt, {
             maxOutputTokens: 50,
             temperature: 0.1,
-            modelOverride: 'gemini-1.5-flash'
+            modelOverride: 'gemini-2.5-flash'
         });
 
         // Log raw response

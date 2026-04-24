@@ -90,13 +90,13 @@ export const generativeModel = (() => {
       return vertexAI.getGenerativeModel({
         model: modelName,
         safetySettings: vertexSafetySettings,
-        generationConfig: { maxOutputTokens: 8192 },
+        generationConfig: { maxOutputTokens: 4096 },
         // Instruction will be applied dynamically in services for better flexibility
       });
     } else if (genAI) {
       return genAI.getGenerativeModel({
         model: modelName,
-        generationConfig: { maxOutputTokens: 8192 },
+        generationConfig: { maxOutputTokens: 4096 },
       });
     } else {
       console.error('❌ CRITICAL: No AI provider available for generativeModel!');

@@ -209,25 +209,49 @@ export const retrieveContextFromRag = async (query, topK = 8, category = 'LEGAL'
 };
 
 /**
- * Rewrites user message into an optimized search query using Gemini
+ * Combined RAG Detection and Query Rewriting
+ * Reduces latency by performing both tasks in a single LLM call.
  */
-export const rewriteQuery = async (userQuestion) => {
+export const analyzeRAGRequirements = async (query) => {
     try {
-        const rewriteTemplate = configService.getConfig('QUERY_REWRITE_PROMPT', 'Rewrite the user question for search: {user_question}');
-        const rewritePrompt = rewriteTemplate.replace('{user_question}', userQuestion);
+        const lower = query.toLowerCase().trim();
+        const brandKeywords = ['uwo', 'aisa', 'ai mall', 'unified web'];
+        const hasBrandKeyword = brandKeywords.some(bk => lower.includes(bk));
         
-        const rewriteResult = await AskVertexRaw(rewritePrompt, { 
-            maxOutputTokens: 200, 
-            temperature: 0.2,
-            modelOverride: 'gemini-1.5-flash'
+        // Fast-path for very short or generic queries
+        if (query.length < 5) return { needsRAG: false, rewrittenQuery: query };
+
+        const prompt = `Analyze if the following user query needs information from a private company knowledge base (AISA/UWO/Legal).
+User Query: "${query}"
+
+Output ONLY a JSON object:
+{
+  "needsRAG": boolean,
+  "rewrittenQuery": "optimized search query for vector database"
+}
+If generic (greeting, simple math, common knowledge), set needsRAG to false.`;
+
+        const result = await AskVertexRaw(prompt, { 
+            modelOverride: 'gemini-2.5-flash',
+            maxOutputTokens: 150,
+            temperature: 0.1,
+            isJson: true
         });
         
-        const cleanedQuery = rewriteResult.trim().replace(/^["']|["']$/g, '');
-        logger.info(`[QueryRewrite] Original: "${userQuestion}" -> Rewritten: "${cleanedQuery}"`);
-        return cleanedQuery;
+        try {
+            const cleanJson = result.replace(/```json\s*|\s*```/g, '').trim();
+            const data = JSON.parse(cleanJson);
+            logger.info(`[RAG-Analyzer] NeedsRAG: ${data.needsRAG} | Rewritten: ${data.rewrittenQuery}`);
+            return {
+                needsRAG: data.needsRAG || hasBrandKeyword,
+                rewrittenQuery: data.rewrittenQuery || query
+            };
+        } catch (e) {
+            return { needsRAG: hasBrandKeyword, rewrittenQuery: query };
+        }
     } catch (error) {
-        logger.error(`[QueryRewrite] Error: ${error.message}`);
-        return userQuestion; // Fallback to original
+        logger.error(`[RAG-Analyzer] Error: ${error.message}`);
+        return { needsRAG: false, rewrittenQuery: query };
     }
 };
 
@@ -235,50 +259,17 @@ export const rewriteQuery = async (userQuestion) => {
  * Detects if the user's query specifically needs company knowledge base information
  */
 export const detectRAGNeed = async (query) => {
-    try {
-        const lower = query.toLowerCase().trim();
-        // Fast-path: check for common conversational fillers, greetings, and generic definitions
-        const fillers = [
-            'hi', 'hello', 'thanks', 'thank you', 'okay', 'dynamic', 'great', 'awesome', 
-            'happy to help', 'see you', 'bye', 'hope this helps', 'hope this clears things up',
-            'no problem', 'you are welcome', 'got it', 'sure', 'alright', 'what is', 'define',
-            'explain', 'how to', 'meaning of'
-        ];
-        
-        // If it starts with a general definition phrase and doesn't mention brand keywords
-        const brandKeywords = ['uwo', 'aisa', 'ai mall', 'unified web'];
-        const hasBrandKeyword = brandKeywords.some(bk => lower.includes(bk));
-        
-        const generalPhrases = [
-            'what is', 'define', 'how to', 'meaning of', 'explain', 'tell me about', 
-            'suggest', 'why is', 'who is', 'give me', 'describe', 'difference between',
-            'how does', 'why does', 'what are', 'where is'
-        ];
-        const isGeneralDefinition = generalPhrases.some(p => lower.startsWith(p)) && !hasBrandKeyword;
-
-        if (fillers.some(f => lower === f) || query.length < 5 || isGeneralDefinition) {
-            logger.info(`[RAG-Detector] Fast-path NO (General Content) for: "${query}"`);
-            return false;
-        }
-
-        const detectorTemplate = configService.getConfig('RAG_DETECTOR_PROMPT', 'Needs RAG? {query}');
-        const detectorPrompt = detectorTemplate.replace('{query}', query);
-
-        const result = await AskVertexRaw(detectorPrompt, { 
-            modelOverride: 'gemini-1.5-flash',
-            maxOutputTokens: 10,
-            temperature: 0.1 
-        });
-        const decision = result.trim().toUpperCase();
-        logger.info(`[RAG-Detector] AI Decision for "${query}": ${decision}`);
-        
-        // Check if decision starts with YES or is just YES
-        return decision === 'YES' || decision.startsWith('YES\n') || decision.startsWith('YES ');
-    } catch (error) {
-        logger.error(`[RAG-Detector] Error: ${error.message}`);
-        return false;
-    }
+    const res = await analyzeRAGRequirements(query);
+    return res.needsRAG;
 }
+
+/**
+ * Rewrites user message into an optimized search query using Gemini
+ */
+export const rewriteQuery = async (userQuestion) => {
+    const res = await analyzeRAGRequirements(userQuestion);
+    return res.rewrittenQuery;
+};
 
 /**
  * Internal helper for basic text generation - creates a fresh lightweight model
@@ -431,7 +422,7 @@ export const askVertex = async (prompt, context = null, options = {}) => {
                 ],
                 generationConfig: {
                     maxOutputTokens: 4096,
-                    responseMimeType: (systemInstruction && systemInstruction.includes("JSON")) ? "application/json" : "text/plain"
+                    responseMimeType: (systemInstruction && (systemInstruction.includes("JSON") || options.isJson)) ? "application/json" : "text/plain"
                 },
                 systemInstruction: systemInstruction,
                 tools: options.useSearch ? [{ googleSearchRetrieval: {} }] : []

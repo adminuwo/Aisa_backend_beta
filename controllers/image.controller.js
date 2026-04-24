@@ -14,7 +14,7 @@ import axios from 'axios';
 const GEMINI_IMAGE_MODELS = [
     'gemini-3.1-flash-image-preview',
     'gemini-3-pro-image-preview',
-    'gemini-2.5-flash-image',
+    'gemini-2.5-flash',
 ];
 
 const getGenAIClient = (location = 'global') => new GoogleGenAI({
@@ -23,7 +23,7 @@ const getGenAIClient = (location = 'global') => new GoogleGenAI({
     location,
 });
 
-export const generateImageFromPrompt = async (prompt, originalImage = null, aspectRatio = '1:1', selectedModelId = 'gemini-2.5-flash-image', manualEditMode = null) => {
+export const generateImageFromPrompt = async (prompt, originalImage = null, aspectRatio = '1:1', selectedModelId = 'gemini-2.5-flash', manualEditMode = null) => {
     try {
         console.log(`[VERTEX IMAGE] Triggered for: "${prompt}" (Edit: ${!!originalImage}, Ratio: ${aspectRatio}, Model: ${selectedModelId})`);
 
