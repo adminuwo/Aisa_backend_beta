@@ -34,7 +34,7 @@ export const shouldSearch = async (query) => {
 
         const decision = await askVertex(query, null, {
             systemInstruction: systemPrompt,
-            modelOverride: 'gemini-1.5-flash',
+            modelOverride: 'gemini-2.5-flash',
             maxOutputTokens: 10,
             temperature: 0
         });
@@ -64,7 +64,7 @@ export const performSearch = async (query, userLanguage = 'English') => {
             systemInstruction: systemPrompt,
             useSearch: true,
             returnSources: true,
-            modelOverride: 'gemini-1.5-flash'
+            modelOverride: 'gemini-2.5-flash'
         });
 
         if (result && result.text) {

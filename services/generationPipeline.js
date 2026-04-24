@@ -1,4 +1,4 @@
-import { GoogleGenAI } from '@google/genai';
+import OpenAI from 'openai';
 import logger from '../utils/logger.js';
 import { getConfig } from './configService.js';
 
@@ -23,12 +23,21 @@ const cleanCache = () => {
  * @param {string} mediaType 'image' | 'video'
  * @returns {Promise<string>} Enhanced prompt
  */
+/**
+ * Enhances a raw user prompt using GPT-5.4 before passing to the image/video model.
+ *
+ * Architecture:
+ *   User Input → GPT-5.4 (Prompt Enhancer) → Optimized Prompt → Execution Model
+ *
+ * @param {string} prompt - Raw user prompt
+ * @param {string} mediaType - 'image' | 'video'
+ * @returns {Promise<string>} Enhanced prompt
+ */
 export const enhancePrompt = async (prompt, mediaType) => {
     try {
         cleanCache();
 
         // Pre-process: Replace brand-sensitive word "AISA" with a neutral placeholder
-        // so the LLM enhancer doesn't interpret it as a logo/branding request.
         const AISA_PLACEHOLDER = '__PRODUCT_NAME__';
         const hasAisa = /\bAISA\b/i.test(prompt);
         const normalizedPrompt = hasAisa ? prompt.replace(/\bAISA\b/gi, AISA_PLACEHOLDER) : prompt;
@@ -42,40 +51,36 @@ export const enhancePrompt = async (prompt, mediaType) => {
             }
         }
 
-        const projectId = process.env.GCP_PROJECT_ID;
-        if (!projectId) {
-            logger.warn('[PromptEnhancer] Missing GCP_PROJECT_ID, skipping enhancement');
+        const apiKey = process.env.OPENAI_API_KEY;
+        if (!apiKey) {
+            logger.warn('[PromptEnhancer] Missing OPENAI_API_KEY — skipping enhancement, using raw prompt');
             return prompt;
         }
 
-        const client = new GoogleGenAI({
-            vertexai: true,
-            project: projectId,
-            location: 'us-central1'
-        });
+        // Official OpenAI SDK — picks up OPENAI_API_KEY from env automatically
+        const client = new OpenAI({ apiKey });
 
-        let systemInstruction = '';
-        if (mediaType === 'video') {
-            systemInstruction = getConfig('VIDEO_PROMPT_ENHANCER', `You are an expert video prompt engineer.
+        // System instruction based on media type
+        const systemInstruction = mediaType === 'video'
+            ? getConfig('VIDEO_PROMPT_ENHANCER', `You are an expert video prompt engineer.
 Enhance the given basic prompt to be highly descriptive for AI Video generation.
 Format MUST follow strict structure: [Subject & Interactions] + [Environment] + [Lighting] + [Camera Movement/Angles] + [Quality/Style].
 
 CRITICAL RULES — NEVER break these:
-1. NEVER change, replace, drop, or ignore ANY of the intended main subjects or their interactions. If the user mentions multiple subjects (e.g. "panda sitting on an elephant"), you MUST strictly preserve all of them. The intended subject is SACRED.
-2. NEVER invent a new animal, person, object, or scene that the user did not mention, except for the logical environment.
-3. DO NOT include any prefix like "Prompt:" or extra conversational text. Keep it under 60 words for maximum impact.
-4. If the prompt contains a placeholder like __PRODUCT_NAME__, treat it as a generic named entity or product and do NOT replace it.`);
-        } else {
-            systemInstruction = getConfig('IMAGE_PROMPT_ENHANCER', `You are an expert image prompt engineer.
+1. NEVER change, replace, drop, or ignore ANY of the intended main subjects. The intended subject is SACRED.
+2. NEVER invent a new animal, person, object, or scene the user did not mention.
+3. DO NOT include any prefix like "Prompt:" or extra conversational text. Keep it under 60 words.
+4. If the prompt contains a placeholder like __PRODUCT_NAME__, treat it as a generic named entity.`)
+            : getConfig('IMAGE_PROMPT_ENHANCER', `You are an expert image prompt engineer.
 Your ONLY job is to add visual descriptors (style, lighting, quality) to the user's prompt.
 
 CRITICAL RULES — NEVER break these:
-1. NEVER change, replace, swap, or reinterpret the INTENDED main subject. If the user has an obvious typo (e.g. "panada" instead of "panda", "ctt" instead of "cat"), you MUST autocorrect it to the intended subject. Then, ensure the output contains that corrected subject. The intended subject is SACRED.
-2. NEVER invent a new animal, person, object, or scene that the user did not mention, except for the logical environment (e.g. bamboo forest for panda).
-3. ONLY add descriptors like: art style, lighting quality, camera angle, mood, rendering quality.
+1. NEVER change, replace, swap, or reinterpret the INTENDED main subject. Autocorrect obvious typos to the intended subject. The intended subject is SACRED.
+2. NEVER invent a new animal, person, object, or scene the user did not mention.
+3. ONLY add: art style, lighting quality, camera angle, mood, rendering quality.
 4. Keep the output under 30 words.
 5. DO NOT include any prefix like "Prompt:" or "Enhanced:".
-6. If the prompt contains a placeholder like __PRODUCT_NAME__, treat it as a generic named entity — do NOT replace it with logos, brand visuals, or specific identifiable imagery.
+6. If the prompt contains __PRODUCT_NAME__, treat it as a generic named entity — do NOT replace it with logos or brand visuals.
 
 EXAMPLE:
 Input: "generate image of panda"
@@ -83,40 +88,40 @@ Output: "A giant panda sitting in a bamboo forest, soft natural lighting, ultra-
 
 Input: "a dog on a beach"
 Output: "A golden retriever dog playing on a sunny beach, golden hour lighting, shallow depth of field, photorealistic, 8K"`);
-        }
 
-        logger.info(`[PromptEnhancer] Enhancing ${mediaType} prompt via LLM...`);
-        const response = await client.models.generateContent({
-            model: 'gemini-1.5-flash',
-            contents: [{ role: 'user', parts: [{ text: `User Prompt: "${normalizedPrompt}"\n\nAdd visual quality descriptors. KEEP the exact subject. Return enhanced prompt only.` }] }],
-            config: {
-                systemInstruction: systemInstruction,
-                temperature: 0.2,
-                maxOutputTokens: 200,
-            }
+        logger.info(`[PromptEnhancer] Sending to GPT-5.4 for ${mediaType} prompt enhancement...`);
+
+        // Official OpenAI Responses API
+        const response = await client.responses.create({
+            model: 'gpt-5.4',
+            instructions: systemInstruction,
+            input: `User Prompt: "${normalizedPrompt}"\n\nAdd visual quality descriptors. KEEP the exact subject. Return enhanced prompt only.`,
         });
 
-        let enhancedText = response.text || normalizedPrompt;
-        // Clean up any weird prefixes the LLM might hallucinate
-        enhancedText = enhancedText.replace(/^(Here is the enhanced prompt:|Prompt:|Output:|Enhanced:|\*\*Enhanced Prompt:\*\*|\[.*?\]\s*-?\s*)/gi, '').trim();
+        let enhancedText = response.output_text || normalizedPrompt;
 
-        // Post-process: Restore the original word AISA from the placeholder
+        // Strip any hallucinated prefixes
+        enhancedText = enhancedText
+            .replace(/^(Here is the enhanced prompt:|Prompt:|Output:|Enhanced:|\*\*Enhanced Prompt:\*\*|\[.*?\]\s*-?\s*)/gi, '')
+            .trim();
+
+        // Restore "AISA" from placeholder
         if (hasAisa) {
             enhancedText = enhancedText.replace(new RegExp(AISA_PLACEHOLDER, 'g'), 'AISA');
         }
 
-        // Save to cache
-        promptCache.set(cacheKey, {
-            enhanced: enhancedText,
-            timestamp: Date.now()
-        });
+        logger.info(`[PromptEnhancer] GPT-5.4 enhanced: "${enhancedText.substring(0, 80)}..."`);
+
+        // Cache the result
+        promptCache.set(cacheKey, { enhanced: enhancedText, timestamp: Date.now() });
 
         return enhancedText;
     } catch (error) {
-        logger.error(`[PromptEnhancer] Failed to enhance prompt: ${error.message}`);
-        return prompt; // Fallback to original
+        logger.error(`[PromptEnhancer] GPT-5.4 enhancement failed: ${error.message} — falling back to raw prompt`);
+        return prompt; // Non-fatal: image generation continues with original prompt
     }
 };
+
 
 /**
  * Clean and validate prompts to ensure safety and structure

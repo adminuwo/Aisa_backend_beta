@@ -25,12 +25,13 @@ router.post('/', verifyToken, upload.single('image'), creditMiddleware, async (r
         const { prompt, model } = req.body;
         const file = req.file;
 
-        // Whitelist of supported edit models
+        // Models supported for image editing via @google/genai SDK (global endpoint)
         const ALLOWED_EDIT_MODELS = [
-            'gemini-1.5-flash',
-            'gemini-1.5-pro',
+            'gemini-2.5-flash-image',
+            'gemini-3.1-flash-image-preview',
+            'gemini-3-pro-image-preview',
         ];
-        const selectedModel = ALLOWED_EDIT_MODELS.includes(model) ? model : 'gemini-1.5-flash';
+        const selectedModel = ALLOWED_EDIT_MODELS.includes(model) ? model : 'gemini-2.5-flash-image';
         console.log(`[Magic Image Edit] Using model: ${selectedModel}`);
 
         if (!prompt) {

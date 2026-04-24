@@ -669,7 +669,7 @@ ${logoBase64 ? '6' : '3'}. Choose a contrasting color (e.g., white text on dark 
     else if (aspectRatio === '1:1')   geminiRatio = '1:1';
 
     const response = await client.models.generateContent({
-      model: 'gemini-1.5-flash',
+      model: 'gemini-2.5-flash',
       contents: [{ role: 'user', parts }],
       config: { 
         responseModalities: [Modality.TEXT, Modality.IMAGE],

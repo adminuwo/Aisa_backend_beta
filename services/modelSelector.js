@@ -18,35 +18,27 @@ import logger from '../utils/logger.js';
  * @returns {string} - Final model ID to use
  */
 export const selectImageModel = (requestedModelId, quality = 'fast', isPremium = false) => {
+    // Quality tier map → Gemini image models (all use @google/genai SDK, global endpoint)
     const modelMap = {
-        fast: 'gemini-1.5-flash',
-        quality: 'gemini-1.5-flash',
-        ultra: 'gemini-1.5-pro'
+        fast:    'gemini-2.5-flash-image',
+        quality: 'gemini-3.1-flash-image-preview',
+        ultra:   'gemini-3-pro-image-preview',
     };
 
-    // If a valid model was explicitly selected, respect it
+    // All valid Gemini image models the frontend can select via model cards
     const knownModels = [
-        'gemini-1.5-flash',
-        'gemini-1.5-pro',
+        'gemini-2.5-flash-image',
+        'gemini-3.1-flash-image-preview',
+        'gemini-3-pro-image-preview',
     ];
-    
+
+    // If frontend sent a valid model ID, use it directly
     if (requestedModelId && knownModels.includes(requestedModelId)) {
-        // Restrict pro models to premium users
-        // const premiumModels = ['gemini-3-pro-image-preview'];
-        // if (premiumModels.includes(requestedModelId) && !isPremium) {
-        //     logger.warn(`[ModelSelector] Premium model ${requestedModelId} requested by non-premium user, downgrading to Standard`);
-        //     return 'gemini-3.1-flash-image-preview';
-        // }
         return requestedModelId;
     }
 
     // Auto-select based on quality hint
     const selected = modelMap[quality] || modelMap.fast;
-    // if (quality === 'ultra' && !isPremium) {
-    //     logger.warn('[ModelSelector] Ultra quality requested by free user, using quality tier');
-    //     return modelMap.quality;
-    // }
-
     logger.info(`[ModelSelector] Auto-selected image model: ${selected} (quality=${quality}, premium=${isPremium})`);
     return selected;
 };

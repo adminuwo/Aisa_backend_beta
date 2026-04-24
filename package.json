@@ -51,6 +51,7 @@
     "node-vibrant": "^3.2.1-alpha.1",
     "nodemailer": "^7.0.12",
     "officeparser": "^4.2.0",
+    "openai": "^6.34.0",
     "paytmchecksum": "^1.5.1",
     "pdf-lib": "^1.17.1",
     "pdf-parse": "^1.1.1",

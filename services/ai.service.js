@@ -601,7 +601,7 @@ export const generateRelatedQuestions = async (userMessage, aiResponse, language
         const response = await vertexService.AskVertexRaw(prompt, { 
             maxOutputTokens: 200, 
             temperature: 0.8,
-            modelOverride: 'gemini-1.5-flash' 
+            modelOverride: 'gemini-2.5-flash' 
         });
         
         const cleanJson = response.replace(/```json\s*|\s*```/g, '').trim();
@@ -637,7 +637,7 @@ Title:`;
         const title = await vertexService.AskVertexRaw(fullPrompt, {
             maxOutputTokens: 50,
             temperature: 0.1,
-            modelOverride: 'gemini-1.5-flash'
+            modelOverride: 'gemini-2.5-flash'
         });
 
         // Log raw response

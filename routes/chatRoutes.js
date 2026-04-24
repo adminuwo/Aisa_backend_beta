@@ -183,11 +183,11 @@ router.post("/", optionalVerifyToken, identifyGuest, async (req, res) => {
                 async (finalPrompt, activeModel) => {
                     return await generateImageFromPrompt(finalPrompt, null, aspectRatio || '1:1', activeModel);
                 },
-                { modelId: reqModelId || 'gemini-1.5-flash', enhance: true }
+                { modelId: reqModelId || 'imagen-3.0-generate-001', enhance: true }
             );
             
             if (pipelineResult.url) {
-                finalResponse.imageUrl = pipelineResult.url;
+                finalResponse.imageUrl = pipelineResult.url;  
                 finalResponse.reply = reply;
 
                 // 🧠 Generate Smart Prompts for the Image
@@ -206,7 +206,7 @@ router.post("/", optionalVerifyToken, identifyGuest, async (req, res) => {
                 async (finalPrompt, activeModel) => {
                     return await generateImageFromPrompt(finalPrompt, sourceImage, aspectRatio || '1:1', activeModel);
                 },
-                { modelId: reqModelId || 'gemini-1.5-flash', enhance: true }
+                { modelId: reqModelId || 'gemini-2.5-flash', enhance: true }
             );
 
             if (pipelineResult.url) {
