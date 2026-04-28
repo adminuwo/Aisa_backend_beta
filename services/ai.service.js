@@ -18,6 +18,7 @@ import * as configService from './configService.js';
 import { detectLanguage } from '../utils/languageDetector.js';
 import { classifyIntent } from './intent/intentClassifier.js';
 import { getLegalPrompt, LEGAL_DISCLAIMER } from '../Tools/AI_Legal/legalPrompts.js';
+import { safeParseLLMJson } from '../utils/jsonUtils.js';
 
 
 // Real RAG Storage (MongoDB Atlas)
@@ -467,19 +468,16 @@ Maintain any text response outside the JSON block.`;
             });
         }
 
-        // --- Generate Related Questions (Non-blocking background task) ---
-        // We no longer await this to ensure the main chat response is returned as fast as possible.
-        generateRelatedQuestions(message, finalResponseData.text, userLanguage, mode).then(suggestions => {
+        // --- Generate Related Questions ---
+        try {
+            const suggestions = await generateRelatedQuestions(message, finalResponseData.text, userLanguage, mode);
             if (suggestions && suggestions.length > 0) {
-                logger.info(`[RelatedQuestions] Generated ${suggestions.length} suggestions in background.`);
+                finalResponseData.suggestions = suggestions;
+                logger.info(`[RelatedQuestions] Generated ${suggestions.length} suggestions.`);
             }
-        }).catch(err => logger.error(`[RelatedQuestions] Background task failed: ${err.message}`));
-
-        // --- ENHANCED FALLBACK SUGGESTIONS (Per user request) ---
-        const GENERAL_FALLBACKS = ["Explain in simple terms", "Give examples", "Summarize this"];
-        const LEGAL_FALLBACKS = ["Draft a legal notice", "Explain my rights", "Check for risks"];
-
-        finalResponseData.suggestions = (mode === 'LEGAL_TOOLKIT' || legalInstruction) ? LEGAL_FALLBACKS : GENERAL_FALLBACKS;
+        } catch (err) {
+            logger.error(`[RelatedQuestions] Task failed: ${err.message}`);
+        }
 
         // --- POST-PROCESSING: Handle Legal Disclaimers & Cleanup ---
         if (finalResponseData.text && (mode === 'LEGAL_TOOLKIT' || legalInstruction)) {
@@ -540,39 +538,67 @@ export const reloadVectorStore = async () => {
 
 export const generateRelatedQuestions = async (userMessage, aiResponse, language = 'English', mode = 'GENERAL') => {
     try {
-        const prompt = `You are a smart suggestion engine for an AI assistant.
-        Your job is to generate highly relevant follow-up suggestions based ONLY on the conversation context.
+        const prompt = `You are an intelligent suggestion engine integrated into a chat system.
 
-        INPUT:
-        - User message: "${userMessage}"
-        - Assistant response: "${aiResponse}"
-        - Mode: ${mode}
+Your task is to generate 3 to 5 highly relevant, clickable follow-up suggestions after every AI response.
 
-        TASK:
-        Generate exactly 3 follow-up suggestions in ${language}.
+STRICT RULES:
 
-        STRICT RULES (VERY IMPORTANT):
-        1. CONTEXT-AWARE:
-           - Understand the topic deeply before generating suggestions.
-           - Suggestions MUST relate directly to the current conversation context.
-        2. NO GENERIC SUGGESTIONS (Zero Tolerance):
-           - NEVER return: "Explain in simple terms", "Give examples", "Summarize this", or any reusable phrases.
-           - If you generate generic suggestions → your output is WRONG.
-        3. ACTION-ORIENTED:
-           - Each suggestion must feel like a next step (Ask for detail, Modify output, Compare, Apply, Extend).
-           - If Mode is LEGAL_TOOLKIT, suggest specific legal follow-ups (e.g., draft notice, check evidence, next steps).
-        4. LENGTH:
-           - Each suggestion: 6–12 words only.
-        5. VARIETY:
-           - All 3 suggestions must be different and avoid repeating similar structures.
-        6. LANGUAGE:
-           - Respond ENTIRELY in ${language}.
+1. Context Awareness:
+- Suggestions MUST be based on the latest user message + AI response.
+- Understand intent, tone, and topic before generating suggestions.
 
-        OUTPUT FORMAT:
-        Return ONLY a JSON array of strings:
-        ["Suggestion 1", "Suggestion 2", "Suggestion 3"]
+2. No Repetition:
+- Never repeat the same suggestions across messages.
+- Always generate fresh and unique suggestions.
 
-        No extra text.`;
+3. Conversation Forwarding:
+- Suggestions should help continue the conversation.
+- They must guide the user to the next logical step.
+
+4. Action-Oriented:
+- Each suggestion must feel clickable and actionable.
+- Use short, clear phrases (max 6-8 words).
+- If Mode is LEGAL_TOOLKIT, suggest specific legal follow-ups.
+
+5. Variety:
+- Mix different types:
+  - Clarification (e.g., "Explain in simple words")
+  - Expansion (e.g., "Give more examples")
+  - Action (e.g., "Create a sample case")
+  - Alternative (e.g., "Show another approach")
+
+6. Avoid Generic Suggestions:
+❌ "Tell me more"
+❌ "Explain again"
+❌ "Next"
+
+7. Personalization:
+- If input is small (like "hello"), suggest onboarding-style options.
+- If input is complex, suggest deep-dive or tools.
+
+8. Language:
+- Respond ENTIRELY in ${language}.
+
+9. Format Output STRICTLY:
+
+Return ONLY this JSON format:
+
+{
+  "suggestions": [
+    "Suggestion 1",
+    "Suggestion 2",
+    "Suggestion 3",
+    "Suggestion 4"
+  ]
+}
+
+No extra text.
+
+INPUT CONTEXT:
+- User message: "${userMessage}"
+- Assistant response: "${aiResponse}"
+- Mode: ${mode}`;
 
         const response = await vertexService.AskVertexRaw(prompt, {
             maxOutputTokens: 200,
@@ -580,9 +606,9 @@ export const generateRelatedQuestions = async (userMessage, aiResponse, language
             modelOverride: 'gemini-1.5-flash'
         });
 
-        const cleanJson = response.replace(/```json\s*|\s*```/g, '').trim();
-        const questions = JSON.parse(cleanJson);
-        return Array.isArray(questions) ? questions.slice(0, 4) : [];
+        const parsed = safeParseLLMJson(response, { suggestions: [] });
+        const questions = parsed.suggestions || [];
+        return Array.isArray(questions) ? questions.slice(0, 5) : [];
     } catch (error) {
         logger.error(`[RelatedQuestions] Error: ${error.message}`);
         return [];

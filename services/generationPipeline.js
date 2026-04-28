@@ -161,9 +161,10 @@ export const executeVideoPipeline = async (rawPrompt, generateFunction, context)
     let attempt = 0;
     let lastError = null;
 
-    // Define fallback models
+    // Define fallback models (cinema → fast on failure)
     const fallbackMap = {
-        'imagen-3.0-generate-001': 'imagen-3.0-generate-001',
+        'veo-3.1-generate-001':      'veo-3.1-fast-generate-001',
+        'veo-3.1-fast-generate-001': 'veo-3.1-fast-generate-001',
     };
 
     while (attempt <= maxRetries) {

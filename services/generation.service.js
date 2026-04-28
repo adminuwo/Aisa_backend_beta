@@ -1,5 +1,6 @@
 import logger from '../utils/logger.js';
 import * as vertexService from './vertex.service.js';
+import { safeParseLLMJson } from '../utils/jsonUtils.js';
 import { AskOpenAIRaw } from './openai.service.js';
 import { AskVertexRaw } from './vertex.service.js';
 import * as socialAgentService from './socialAgent.service.js';
@@ -20,85 +21,8 @@ import { uploadToGCS, gcsFilename } from './gcs.service.js';
 import sharp from 'sharp';
 
 // --- JSON RECOVERY SYSTEM ---
-function safeParse(content) {
-  if (!content || typeof content !== 'string') return typeof content === 'object' ? content : [];
-  
-  let clean = content.replace(/```json\s*|\s*```/g, '').trim();
-
-  // Step 1: Regex-based extraction (more robust than basic indexOf/lastIndexOf)
-  // Look for the outermost {} or [] pair
-  const jsonRegex = /({[\s\S]*}|\[[\s\S]*\])/;
-  const match = clean.match(jsonRegex);
-  
-  if (match) {
-    const candidate = match[0].trim();
-    try {
-      return JSON.parse(candidate);
-    } catch (e) {
-      // Proceed to aggressive fixing if match exists but is slightly broken
-      clean = candidate;
-    }
-  }
-
-  try {
-    return JSON.parse(clean);
-  } catch (e) {
-    logger.warn(`[JSON Fixer] Standard parse failed (${e.message}). Attempting recovery...`);
-    
-    try {
-      // Step 2: Fix trailing commas, quotes and control characters
-      let aggressive = clean
-        .replace(/,\s*}/g, "}") 
-        .replace(/,\s*]/g, "]") 
-        .replace(/[\u0000-\u001F\u007F-\u009F]/g, ""); 
-      
-      // Fix unescaped newlines in strings
-      aggressive = aggressive.replace(/(?<=[:\s])"(.*?)"(?=[,\s}])|(?<=\[)"(.*?)"(?=[,\s\]])/gs, (match) => {
-         return match.replace(/\n/g, "\\n").replace(/\r/g, "\\r");
-      });
-
-      return JSON.parse(aggressive);
-    } catch (lastE) {
-      // Step 3: Handle truncation and unterminated strings
-      let truncated = clean;
-      
-      const quotes = (truncated.match(/(?<!\\)"/g) || []).length;
-      if (quotes % 2 !== 0) truncated += '"';
-
-      let temp = truncated;
-      for (let i = 0; i < 15; i++) {
-        try {
-          return JSON.parse(temp);
-        } catch (stepE) {
-          const openBrackets = (temp.match(/\[/g) || []).length;
-          const closeBrackets = (temp.match(/\]/g) || []).length;
-          const openBraces = (temp.match(/{/g) || []).length;
-          const closeBraces = (temp.match(/}/g) || []).length;
-
-          if (openBraces > closeBraces) temp += '}';
-          else if (openBrackets > closeBrackets) temp += ']';
-          else break;
-        }
-      }
-
-      // Final attempt: If there's garbage AFTER a valid JSON object, find the FIRST valid object
-      // This solves the 'Unexpected non-whitespace character' error
-      if (lastE.message.includes('Unexpected non-whitespace character')) {
-        for (let j = clean.length - 1; j > 0; j--) {
-          if (clean[j] === '}' || clean[j] === ']') {
-            try {
-              return JSON.parse(clean.substring(0, j + 1));
-            } catch (f) { /* continue */ }
-          }
-        }
-      }
-      
-      console.error("[JSON Fixer] CRITICAL FAILURE. Raw content that failed parse:", content);
-      logger.error(`[JSON Recovery] Final attempt failed. Raw sample: ${content?.substring(0, 200)}...`);
-      throw new Error(`AI response invalid: ${lastE.message}`);
-    }
-  }
-}
+// Use the centralized safeParseLLMJson utility
+const safeParse = (content) => safeParseLLMJson(content, []);
 
 // --- PROMPT TEMPLATES ---
 const PROMPTS = {

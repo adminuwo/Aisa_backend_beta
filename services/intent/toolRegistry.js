@@ -71,10 +71,12 @@ export const TOOL_REGISTRY = {
         isInternal: false,
         emoji: '🎬',
         models: ['veo-3.1-fast-generate-001', 'veo-3.1-generate-001'],
+        fallbackModel: 'veo-3.1-fast-generate-001',
         configOptions: {
             duration: { min: 5, max: 60, default: 5 },
             resolution: ['1080p', '4k'],
-            aspectRatio: ['16:9', '9:16', '1:1']
+            aspectRatio: ['16:9', '9:16', '1:1'],
+            modelId: 'veo-3.1-fast-generate-001'
         }
     },
 

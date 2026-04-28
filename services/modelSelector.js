@@ -52,13 +52,15 @@ export const selectImageModel = (requestedModelId, quality = 'fast', isPremium =
  */
 export const selectVideoModel = (requestedModelId, quality = 'fast', isPremium = false) => {
     const modelMap = {
-        fast: 'imagen-3.0-generate-001',
-        cinema: 'imagen-3.0-generate-001'
+        fast:   'veo-3.1-fast-generate-001',
+        cinema: 'veo-3.1-generate-001'
     };
 
-    const knownModels = ['imagen-3.0-generate-001'];
+    // All valid Veo video models the frontend can select via model cards
+    const knownModels = ['veo-3.1-fast-generate-001', 'veo-3.1-generate-001'];
+
     if (requestedModelId && knownModels.includes(requestedModelId)) {
-        // Cinema/Pro model is premium-only
+        // Cinema/Pro model is premium-only — uncomment to enforce:
         // if (requestedModelId === 'veo-3.1-generate-001' && !isPremium) {
         //     logger.warn('[ModelSelector] Cinema model requested by non-premium user, downgrading to Fast');
         //     return 'veo-3.1-fast-generate-001';

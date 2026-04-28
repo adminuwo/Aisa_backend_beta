@@ -20,7 +20,8 @@ import officeParser from 'officeparser';
 import { generateVideoFromPrompt } from "../controllers/videoController.js";
 import { generateImageFromPrompt } from "../controllers/image.controller.js";
 import { generateFollowUpPrompts } from "../utils/imagePromptController.js";
-import { executeImagePipeline } from "../services/generationPipeline.js";
+import { executeImagePipeline, executeVideoPipeline } from "../services/generationPipeline.js";
+import { selectVideoModel } from "../services/modelSelector.js";
 import { getMemoryContext, extractUserMemory, updateMemory } from "../utils/memoryService.js";
 import { subscriptionService, checkPremiumAccess } from '../services/subscriptionService.js';
 import { retrieveContextFromRag, detectRAGNeed } from "../services/vertex.service.js";
@@ -52,7 +53,7 @@ const checkGuestLimits = async (req, sessionId) => {
 
 // --- CORE CHAT ENDPOINT ---
 router.post("/", optionalVerifyToken, identifyGuest, async (req, res) => {
-  const { content, history, systemInstruction, image, video, document, language, model, mode, sessionId, userMsgId, aiMsgId, aspectRatio, modelId: reqModelId } = req.body;
+  const { content, history, systemInstruction, image, video, document, language, model, mode, sessionId, userMsgId, aiMsgId, aspectRatio, modelId: reqModelId, skipSession } = req.body;
 
   try {
     // 1. LIMIT & CREDIT CHECKS
@@ -183,7 +184,7 @@ router.post("/", optionalVerifyToken, identifyGuest, async (req, res) => {
                 async (finalPrompt, activeModel) => {
                     return await generateImageFromPrompt(finalPrompt, null, aspectRatio || '1:1', activeModel);
                 },
-                { modelId: reqModelId || 'imagen-3.0-generate-001', enhance: true }
+                { modelId: reqModelId || 'gemini-2.5-flash-image', enhance: true }
             );
             
             if (pipelineResult.url) {
@@ -222,10 +223,21 @@ router.post("/", optionalVerifyToken, identifyGuest, async (req, res) => {
           }
         }
       } else if (data.action === 'generate_video' && data.prompt) {
-        const videoUrl = await generateVideoFromPrompt(data.prompt);
-        if (videoUrl) {
-          finalResponse.videoUrl = videoUrl;
-          finalResponse.reply = reply;
+        try {
+          const resolvedVideoModel = selectVideoModel(reqModelId, 'fast', req.user?.isPremium || false);
+          const pipelineResult = await executeVideoPipeline(
+            data.prompt,
+            async (refinedPrompt, activeModel) => {
+              return await generateVideoFromPrompt(refinedPrompt, 5, 'fast', '16:9', activeModel, '1080p');
+            },
+            { modelId: resolvedVideoModel, enhance: true }
+          );
+          if (pipelineResult?.url) {
+            finalResponse.videoUrl = pipelineResult.url;
+            finalResponse.reply = reply;
+          }
+        } catch (videoErr) {
+          console.error('[MediaGen] generate_video pipeline error:', videoErr);
         }
       } else if (data.action === 'file_conversion' && (image || document)) {
         try {
@@ -259,6 +271,11 @@ router.post("/", optionalVerifyToken, identifyGuest, async (req, res) => {
     finalResponse.reply = finalResponse.reply || reply;
 
     // 4. SESSION MANAGEMENT
+    // skipSession=true means this is an internal call (e.g. follow-up suggestions) — never persist to DB
+    if (skipSession) {
+      return res.status(200).json(finalResponse);
+    }
+
     console.log(`[BACKEND-CHAT] Session ID: ${sessionId} | Content Len: ${content?.length}`);
     let session = await ChatSession.findOne({ sessionId });
     const isGenericTitle = !session ||
@@ -312,7 +329,8 @@ router.post("/", optionalVerifyToken, identifyGuest, async (req, res) => {
       sources: finalResponse.sources,
       imageUrl: finalResponse.imageUrl,
       videoUrl: finalResponse.videoUrl,
-      conversion: finalResponse.conversion
+      conversion: finalResponse.conversion,
+      suggestions: finalResponse.suggestions
     });
 
     session.lastModified = Date.now();
