@@ -83,7 +83,7 @@ export const chat = async (message, activeDocContent = null, options = {}) => {
         }
 
         const { systemInstruction, mode, images, documents, userName, language, conversationId, userId, model, history, toolName } = options;
-        
+
         const lowerMsg = message.toLowerCase().trim();
         const companyKeywords = ['uwo', 'aisa', 'ai mall', 'unified web', 'what can you do', 'your features', 'your capabilities', 'who are you', 'how can you help', 'tell me about your services'];
         let hasCompanyKeyword = companyKeywords.some(k => lowerMsg.includes(k));
@@ -93,8 +93,8 @@ export const chat = async (message, activeDocContent = null, options = {}) => {
         // Special: If detected as English, we don't force it in the prompt as strictly
         // to allow the AI's internal detection to pick up subtle nuances (like French/Spanish)
         const userLanguage = detected; // Prioritize actual query language for response context
-        const isDefaultEnglish = detected === 'English'; 
-        
+        const isDefaultEnglish = detected === 'English';
+
         const langSwitchRule = `### LANGUAGE BEHAVIOR: 
         1. If the user changes their script or language (e.g. from English to Arabic), you MUST immediately switch your entire response to that new language. 
         2. DO NOT use the previous language of the conversation if the current message is in a clear different script/tongue.
@@ -112,7 +112,7 @@ export const chat = async (message, activeDocContent = null, options = {}) => {
 
         // Prepare context for non-Vertex models if history is provided
         const combinedHistory = history || []; // history from frontend is prioritized for multi-model consistency
-        
+
         // Save User Message (async)
         if (conversationId) {
             memoryService.saveMessageWithEmbedding(conversationId, userId, 'user', message).catch(err => {
@@ -122,13 +122,13 @@ export const chat = async (message, activeDocContent = null, options = {}) => {
 
         // PRIORITY -1: PERSONA INJECTION & TOOL RESTRICTIONS
         const personaContext = await userIntelligenceService.getPersonaInjection(userId);
-        
+
         const isActuallyImageMode = mode === 'IMAGE_GEN' || mode === 'IMAGE_EDIT';
         const isActuallyVideoMode = mode === 'VIDEO_GEN' || mode === 'IMAGE_TO_VIDEO';
         const isActuallySearchMode = mode === 'web_search' || mode === 'DEEP_SEARCH';
         const isActuallyCodeMode = mode === 'CODE_WRITER' || mode === 'CODING_HELP';
         const isActuallyConvertMode = mode === 'FILE_CONVERSION' || mode === 'DOCUMENT_CONVERT';
-        
+
         let toolRestrictions = "";
         if (isActuallyImageMode) {
             toolRestrictions = "\n\n### MODE: IMAGE GENERATION ENABLED. You can generate images using JSON action strictly if explicitly asked. CRITICAL: When creating the JSON action, your 'prompt' MUST preserve the exact main subject requested by the user. Do NOT change, replace, or creatively reimagine the core subject (e.g. if the user says 'panda' or misinterprets it as 'panada', use exactly what they intended or wrote). NEVER substitute the subject with a generic person or other unrelated concepts.";
@@ -191,7 +191,7 @@ Maintain any text response outside the JSON block.`;
         let classification = null;
         let needsRAG = false;
         let rewrittenQuery = message;
-        
+
 
         try {
             // Strip [ACTIVE TOOL: ...] prefixes and legal disclaimers from history
@@ -204,7 +204,7 @@ Maintain any text response outside the JSON block.`;
                 text = text.replace(/⚖️ \*\*Legal Disclaimer:\*\*.*$/is, '');
                 return `${m.role}: ${text.trim()}`;
             }).join(' | ');
-            
+
             // Run independent pre-processing tasks in parallel
             const [intentResult, ragResult] = await Promise.all([
                 classifyIntent(message, images || documents || [], chatSummary).catch(() => null),
@@ -224,8 +224,8 @@ Maintain any text response outside the JSON block.`;
         if (mode === 'LEGAL_TOOLKIT' && classification && classification.intent && classification.intent.startsWith('legal_')) {
             const isRedundant = toolName === classification?.intent;
             if (!isRedundant) {
-               logger.info(`[AI-Service] Legal Intent Detected: ${classification.intent}.`);
-               legalInstruction = `\n\n### SPECIALIZED LEGAL TOOL: ${classification.intent}\n${getLegalPrompt(classification.intent)}`;
+                logger.info(`[AI-Service] Legal Intent Detected: ${classification.intent}.`);
+                legalInstruction = `\n\n### SPECIALIZED LEGAL TOOL: ${classification.intent}\n${getLegalPrompt(classification.intent)}`;
             }
         }
 
@@ -241,7 +241,7 @@ Maintain any text response outside the JSON block.`;
                 const { getAiSnapshot } = await import('./stockService.js');
                 const snapshot = await getAiSnapshot(symbol);
                 if (snapshot) {
-                    finalResponseData = { 
+                    finalResponseData = {
                         text: `Here is my detailed analysis for **${symbol}**. I've compiled an AI Snapshot with risk analysis, performance metrics, and professional recommendations.`,
                         snapshot: snapshot,
                         type: 'stock_snapshot'
@@ -256,7 +256,7 @@ Maintain any text response outside the JSON block.`;
             const { handleGmailIntent } = await import('./intent/gmailService.js');
             const gmailResponse = await handleGmailIntent(userId, message);
             if (gmailResponse) {
-                finalResponseData = { 
+                finalResponseData = {
                     text: gmailResponse.text,
                     type: 'gmail_assistant_action'
                 };
@@ -292,7 +292,7 @@ Maintain any text response outside the JSON block.`;
                 if (isForcedSearch) {
                     logger.info(`[WebSearch] ROUTING TO LIVE SEARCH (Mode: ${mode}) for: ${message}`);
                     let searchResult;
-                    
+
                     if (mode === 'DEEP_SEARCH') {
                         searchResult = await deepSearchService.performDeepSearch(message, userLanguage);
                     } else {
@@ -314,22 +314,22 @@ Maintain any text response outside the JSON block.`;
             // Memory save handled at end
         } else if ((activeDocContent && activeDocContent.length > 0) || (images && images.length > 0) || (documents && documents.length > 0)) {
             // PRIORITY 1: Chat-Uploaded Document / Images
-            
+
             // --- NEW: Legal Context Merging ---
             let combinedContext = null;
             if (mode === 'LEGAL_TOOLKIT') {
                 logger.info(`[LegalToolkit] Merging Case Context and RAG for Priority Rule.`);
                 const rewrittenQuery = await vertexService.rewriteQuery(message);
                 const ragContext = await vertexService.retrieveContextFromRag(rewrittenQuery, 8, 'LEGAL');
-                
+
                 combinedContext = `📄 CASE CONTEXT (PRIMARY):\n${activeDocContent || "Refer to attached file contents."}\n\n📚 LEGAL KNOWLEDGE (RAG - REFERENCE):\n${ragContext?.text || "No relevant legal references found."}`;
             }
 
             const promptWithMemory = buildMemoryPrompt(message);
             const vertexResponse = await vertexService.askVertex(promptWithMemory, combinedContext || activeDocContent, {
-                systemInstruction: dynamicSystemInstruction, 
-                mode, 
-                images, 
+                systemInstruction: dynamicSystemInstruction,
+                mode,
+                images,
                 documents,
                 userName
             });
@@ -341,11 +341,11 @@ Maintain any text response outside the JSON block.`;
                 const targetCategory = (mode === 'LEGAL_TOOLKIT' || legalInstruction) ? 'LEGAL' : 'GENERAL';
                 logger.info(`[RAG-Logic] Target Category: ${targetCategory}`);
                 ragContext = await vertexService.retrieveContextFromRag(rewrittenQuery, 8, targetCategory);
-                
+
                 if (!ragContext) {
                     logger.warn(`[RAG-Logic] No context found for ${targetCategory}. Allowing fallback to general model.`);
                 }
-                
+
                 // Logging
                 try {
                     await QueryLog.create({
@@ -388,7 +388,7 @@ Maintain any text response outside the JSON block.`;
                 // Step 4: Answer Generation (Context + Original Question)
                 const ragInstructionWithLink = `${dynamicSystemInstruction}\n\n### WEBSITE CITATION RULE:\nWhenever you provide information about AISA or UWO based on the provided company documents, you MUST mention the official website: https://uwo24.com/`;
 
-                const langContext = isDefaultEnglish 
+                const langContext = isDefaultEnglish
                     ? "MANDATORY: You MUST detect and match the EXACT script and tongue used by the user. If they use ENGLISH, you MUST respond in ENGLISH. If they use a non-English language or script, respond ENTIRELY in that same language/script."
                     : `MANDATORY: You MUST match the EXACT script and tongue used by the user. If they use ${userLanguage} script, respond ENTIRELY in ${userLanguage} script. (Detected: ${userLanguage})`;
 
@@ -397,22 +397,22 @@ Maintain any text response outside the JSON block.`;
                     ? `📄 CASE CONTEXT: No specific document uploaded. Relying on legal principles.\n\n📚 LEGAL KNOWLEDGE (RAG):\n${ragContext?.text}`
                     : ragContext?.text;
 
-                const ragResponse = await vertexService.askVertex(promptWithMemory, labeledRagContext, { 
-                    userName, 
+                const ragResponse = await vertexService.askVertex(promptWithMemory, labeledRagContext, {
+                    userName,
                     systemInstruction: `${ragInstructionWithLink}\n\n${langSwitchRule}\n\n### LANGUAGE RULE: ${langContext}`,
-                    mode: 'RAG' 
+                    mode: 'RAG'
                 });
                 finalResponseData = { text: ragResponse, isRealTime: false, sources: ragContext?.sources || [], mode: 'RAG' };
             } else {
                 // PRIORITY 3: Multi-Model or Vertex AI General Chat
                 const promptWithMemory = buildMemoryPrompt(message);
-                
+
                 const currentModel = model?.toLowerCase();
                 let aiResponse = "";
 
                 if (currentModel && (currentModel.includes('gpt') || currentModel.includes('openai'))) {
                     logger.info(`[AI-Service] Routing to OpenAI (${currentModel})`);
-                    const langContext = isDefaultEnglish 
+                    const langContext = isDefaultEnglish
                         ? "MANDATORY: You MUST detect and match the EXACT script and tongue used by the user. If they use ENGLISH, you MUST respond in English. If they use a non-English language or script, respond ENTIRELY in that same language/script."
                         : `MANDATORY: You MUST match the EXACT script and tongue used by the user. If they use ${userLanguage} script, respond ENTIRELY in ${userLanguage} script. (Detected: ${userLanguage})`;
 
@@ -430,27 +430,27 @@ Maintain any text response outside the JSON block.`;
                     const greetings = ['hi', 'hello', 'hii', 'hey', 'yo', 'namaste', 'greeting'];
                     const isGreeting = greetings.some(g => lowerMsg === g || lowerMsg.startsWith(g + ' '));
 
-                    const basePersona = isGreeting 
+                    const basePersona = isGreeting
                         ? configService.getGreetingSystemInstruction(personaContext)
                         : configService.getGeneralSystemInstruction(personaContext);
 
                     logger.info(`[AI-Service] Executing Chat (Greeting: ${isGreeting}) for: "${message}"`);
 
-                    const langContext = isDefaultEnglish 
+                    const langContext = isDefaultEnglish
                         ? "MANDATORY: You MUST detect and match the EXACT script and tongue used by the user. If they use ENGLISH, you MUST respond in ENGLISH. If they use a non-English language or script, respond ENTIRELY in that same language/script."
                         : `MANDATORY: You MUST match the EXACT script and tongue used by the user. If they use ${userLanguage} script, respond ENTIRELY in ${userLanguage} script. (Detected: ${userLanguage})`;
 
                     const finalSystemInstruction = `${basePersona}\n\n${dynamicSystemInstruction}\n\n${langSwitchRule}\n\n### LANGUAGE RULE: ${langContext}\n\n${legalInstruction}`;
 
-                    aiResponse = await vertexService.askVertex(promptWithMemory, null, { 
-                        userName, 
+                    aiResponse = await vertexService.askVertex(promptWithMemory, null, {
+                        userName,
                         systemInstruction: finalSystemInstruction,
                         mode: mode || 'GENERAL',
                         images,
                         documents
                     });
                 }
-                
+
                 finalResponseData = { text: aiResponse, isRealTime: false };
             }
         }
@@ -478,7 +478,7 @@ Maintain any text response outside the JSON block.`;
         // --- ENHANCED FALLBACK SUGGESTIONS (Per user request) ---
         const GENERAL_FALLBACKS = ["Explain in simple terms", "Give examples", "Summarize this"];
         const LEGAL_FALLBACKS = ["Draft a legal notice", "Explain my rights", "Check for risks"];
-        
+
         finalResponseData.suggestions = (mode === 'LEGAL_TOOLKIT' || legalInstruction) ? LEGAL_FALLBACKS : GENERAL_FALLBACKS;
 
         // --- POST-PROCESSING: Handle Legal Disclaimers & Cleanup ---
@@ -507,7 +507,7 @@ Maintain any text response outside the JSON block.`;
                 // Ensure there's a clean break
                 cleanText = cleanText + '\n\n' + LEGAL_DISCLAIMER.trim();
             }
-            
+
             finalResponseData.text = cleanText;
         }
 
@@ -517,10 +517,10 @@ Maintain any text response outside the JSON block.`;
         logger.error(`[AI-CHAT-ERROR] Stack Trace: ${error.stack}`);
         logger.error(`[AI-CHAT-ERROR] Message: ${error.message}`);
         const debugInfo = (process.env.NODE_ENV === 'development' || true) ? `\n\n*(Technical Error: ${error.message})*` : '';
-        return { 
-            text: "I'm having trouble connecting to my brain right now. Please try again later." + debugInfo, 
-            error: true, 
-            details: error.message 
+        return {
+            text: "I'm having trouble connecting to my brain right now. Please try again later." + debugInfo,
+            error: true,
+            details: error.message
         };
     }
 };
@@ -574,12 +574,12 @@ export const generateRelatedQuestions = async (userMessage, aiResponse, language
 
         No extra text.`;
 
-        const response = await vertexService.AskVertexRaw(prompt, { 
-            maxOutputTokens: 200, 
+        const response = await vertexService.AskVertexRaw(prompt, {
+            maxOutputTokens: 200,
             temperature: 0.8,
-            modelOverride: 'gemini-1.5-flash' 
+            modelOverride: 'gemini-1.5-flash'
         });
-        
+
         const cleanJson = response.replace(/```json\s*|\s*```/g, '').trim();
         const questions = JSON.parse(cleanJson);
         return Array.isArray(questions) ? questions.slice(0, 4) : [];
@@ -621,7 +621,7 @@ Title:`;
 
         // Clean up the potentially generated string (remove surrounding quotes if any)
         const cleanTitle = title.trim().replace(/^["']|["']$/g, '').replace(/\.\.\.$/, '');
-        
+
         // If it's a safety block or too long, use fallback
         if (cleanTitle.toLowerCase().includes("cannot fulfill") || cleanTitle.length > 60 || !cleanTitle) {
             throw new Error(`Invalid AI title response: "${cleanTitle}"`);

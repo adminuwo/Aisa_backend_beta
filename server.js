@@ -177,6 +177,8 @@ app.use('/api/admin', adminRoutes);
 
 // Projects
 app.use('/api/projects', projectRoutes);
+// Cases alias (same router — /api/cases/:id/auto-analyze maps to /:id/analyze)
+app.use('/api/cases', projectRoutes);
 
 // Broad Fallbacks (should be last and as specific as possible)
 app.use('/api/public', chatRoutes); // Allow /api/public/share/...

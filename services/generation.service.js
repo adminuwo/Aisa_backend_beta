@@ -183,6 +183,7 @@ export const generate30DayStrategy = async (workspaceId) => {
       
       --- BRAND KNOWLEDGE ---
       BRAND DNA: ${brand.extractedBrandSummary || 'Not specified'}
+      DOCUMENT CONTEXT: ${brand.companyOverviewText ? brand.companyOverviewText.substring(0, 3000) : 'No documents uploaded'}
 
       OUTPUT JSON (STRICT):
       {
@@ -252,7 +253,8 @@ export const generate30DayStrategy = async (workspaceId) => {
         TONE/VOICE: ${brand.toneOfVoice || 'Professional'}
         CTA STYLE: ${brand.ctaStyle || 'Direct & Authoritative'}
         THEME: ${strategyDoc.weekly_themes[weekNum] || strategyDoc.weekly_themes[0] || "General"}
-        DNA INSIGHTS: ${brand.extractedBrandSummary || 'Not specified'}
+        BRAND DNA: ${brand.extractedBrandSummary || 'Not specified'}
+        DOCUMENT CONTEXT: ${brand.companyOverviewText ? brand.companyOverviewText.substring(0, 3000) : 'No documents uploaded'}
         STRATEGY CONTEXT: ${strategyDoc.strategy_summary}
         PLAN: Generate ${postsForThisChunk} high-quality, unique posts spread across this ${daysInThisChunk}-day period.
 
@@ -711,17 +713,31 @@ ${logoBase64 ? '6' : '3'}. Choose a contrasting color (e.g., white text on dark 
     else if (aspectRatio === '4:5')   geminiRatio = '4:5';
     else if (aspectRatio === '1:1')   geminiRatio = '1:1';
 
-    const response = await client.models.generateContent({
-      model: 'gemini-3.1-flash-image-preview',  // ← upgraded image model for overlay compositing
-
-      contents: [{ role: 'user', parts }],
-      config: { 
-        responseModalities: [Modality.TEXT, Modality.IMAGE],
-        imageConfig: {
-          aspectRatio: geminiRatio
+    let response;
+    let retryCount = 0;
+    const maxRetries = 3;
+    while (true) {
+      try {
+        response = await client.models.generateContent({
+          model: 'gemini-3.1-flash-image-preview',
+          contents: [{ role: 'user', parts }],
+          config: { 
+            responseModalities: [Modality.TEXT, Modality.IMAGE],
+            imageConfig: { aspectRatio: geminiRatio }
+          }
+        });
+        break;
+      } catch (err) {
+        const isQuotaError = err.status === 429 || err.message?.includes('429') || err.message?.includes('RESOURCE_EXHAUSTED') || err.message?.includes('quota');
+        if (retryCount < maxRetries && isQuotaError) {
+          retryCount++;
+          console.warn(`    [VisualOverlay] ⚠️  Quota hit (429). Retrying ${retryCount}/${maxRetries} after ${retryCount * 4}s...`);
+          await new Promise(r => setTimeout(r, retryCount * 4000));
+        } else {
+          throw err;
         }
       }
-    });
+    }
 
 
     // 4. Extract the resulting image bytes
@@ -774,7 +790,7 @@ ${logoBase64 ? '6' : '3'}. Choose a contrasting color (e.g., white text on dark 
  * Step 4   │ MongoDB  → GeneratedAsset + Job update
  * Step 5   │ Calendar → Entry status marked "generated"
  */
-export const generateVisualPostForEntry = async (workspaceId, entryId, jobId, modelId = 'imagen-3.0-generate-001', postFormat = 'single', aspectRatio = '1:1') => {
+export const generateVisualPostForEntry = async (workspaceId, entryId, jobId, modelId = 'imagen-3.0-generate-001', postFormat = 'single', aspectRatio = '1:1', carouselCount = 3) => {
   const pipelineStart = Date.now();
 
   console.log('\n' + '═'.repeat(60));
@@ -832,13 +848,32 @@ export const generateVisualPostForEntry = async (workspaceId, entryId, jobId, mo
   console.log(`\n[Step 1/5] 🧠 GPT-4 Prompt Engineering (format: ${postFormat})...`);
   const promptStart = Date.now();
 
-  // Format-aware prompt — carousel needs 5 separate slide descriptions
   const isCarousel = postFormat === 'carousel';
+
+  let slideStructure = '';
+  if (isCarousel) {
+    slideStructure = '- Slide 1: Bold, attention-grabbing opening visual representing the hook\n';
+    if (carouselCount === 2) {
+      slideStructure += '- Slide 2: CTA-driven closing — inspiring action with brand energy';
+    } else if (carouselCount === 3) {
+      slideStructure += '- Slide 2: Solution / product in context — aspirational lifestyle\n';
+      slideStructure += '- Slide 3: CTA-driven closing — inspiring action with brand energy';
+    } else if (carouselCount === 4) {
+      slideStructure += '- Slide 2: Problem visualization — what challenge the audience faces\n';
+      slideStructure += '- Slide 3: Solution / product in context — aspirational lifestyle\n';
+      slideStructure += '- Slide 4: CTA-driven closing — inspiring action with brand energy';
+    } else {
+      slideStructure += '- Slide 2: Problem visualization — what challenge the audience faces\n';
+      slideStructure += '- Slide 3: Solution / product in context — aspirational lifestyle\n';
+      slideStructure += '- Slide 4: Key benefit or proof point — data, result, transformation\n';
+      slideStructure += '- Slide 5: CTA-driven closing — inspiring action with brand energy';
+    }
+  }
 
   const promptEngineeringRequest = isCarousel
     ? `You are an expert AI Image Prompt Engineer for social media advertising.
 
-Generate 5 separate, distinct Imagen 3 image generation prompts for a CAROUSEL post.
+Generate ${carouselCount} separate, distinct Imagen 3 image generation prompts for a CAROUSEL post.
 Each slide must be visually different but tell a cohesive brand story.
 
 BRAND: ${companyName}
@@ -852,11 +887,7 @@ BRAND COLORS: ${brandColors}
 TARGET AUDIENCE: ${targetEthnicity}
 
 Slide structure:
-- Slide 1: Bold, attention-grabbing opening visual representing the hook
-- Slide 2: Problem visualization — what challenge the audience faces
-- Slide 3: Solution / product in context — aspirational lifestyle
-- Slide 4: Key benefit or proof point — data, result, transformation
-- Slide 5: CTA-driven closing — inspiring action with brand energy
+${slideStructure}
 
 Requirements for each prompt:
 - Photorealistic, studio-grade, high-quality
@@ -865,7 +896,7 @@ Requirements for each prompt:
 - NO text or logos in any image
 - Distinct subject / scene per slide
 
-Output ONLY 5 numbered prompts (1. 2. 3. 4. 5.), nothing else. No JSON, no explanation.`
+Output ONLY ${carouselCount} numbered prompts (1. 2. 3. ...), nothing else. No JSON, no explanation.`
     : `You are an expert AI Image Prompt Engineer for social media advertising.
 
 Generate a detailed, photorealistic Imagen 3 image generation prompt for the following social media post:
@@ -909,16 +940,16 @@ Output ONLY the raw Imagen prompt text, nothing else. No JSON, no explanation.`;
   let carouselSlides = [];
 
   if (isCarousel) {
-    console.log(`    📑 Carousel mode — Parsing 5 slide prompts...`);
+    console.log(`    📑 Carousel mode — Parsing ${carouselCount} slide prompts...`);
     // Split by markers like "1. ", "2. ", or simply double newlines if markers aren't perfectly followed
     const slideMatches = trimmedPrompt.split(/\n?\d+\.\s*/).filter(s => s.trim().length > 10);
     
-    // Take exactly 5 or whatever we have
-    const slidePrompts = slideMatches.slice(0, 5);
-    if (slidePrompts.length < 5) {
-       console.warn(`    ⚠️  Only parsed ${slidePrompts.length}/5 slides. Attempting line-split fallback.`);
+    // Take exactly carouselCount or whatever we have
+    const slidePrompts = slideMatches.slice(0, carouselCount);
+    if (slidePrompts.length < carouselCount) {
+       console.warn(`    ⚠️  Only parsed ${slidePrompts.length}/${carouselCount} slides. Attempting line-split fallback.`);
        // Minimal fallback if the numbering was weird
-       const fallback = trimmedPrompt.split('\n').filter(l => l.trim().length > 30).slice(0, 5);
+       const fallback = trimmedPrompt.split('\n').filter(l => l.trim().length > 30).slice(0, carouselCount);
        if (fallback.length > slidePrompts.length) carouselSlides = fallback;
        else carouselSlides = slidePrompts;
     } else {
@@ -964,17 +995,13 @@ Output ONLY the raw Imagen prompt text, nothing else. No JSON, no explanation.`;
     console.log(`    ⚡ Staggered Rendering ${carouselSlides.length} slides (1.2s apart to manage quota)...`);
 
     // Generate unique text variations per slide via Vertex AI
-    const variationsPrompt = `You are a professional social media copywriter creating a ${carouselSlides.length}-slide carousel post.
+    const variationsPrompt = `You are a professional social media copywriter creating a ${carouselCount}-slide carousel post.
 
 Original Heading: ${title}
 Original Hook/Subheading: ${hook || 'N/A'}
 
-Generate ${carouselSlides.length} UNIQUE and DISTINCT text overlays for each slide. The slides must flow as a logical story:
-- Slide 1: Hook / Attention Grabber
-- Slide 2: Problem / Pain Point
-- Slide 3: Solution / Key Insight
-- Slide 4: Proof / Benefit
-- Slide 5: CTA / Next Step
+Generate ${carouselCount} UNIQUE and DISTINCT text overlays for each slide. The slides must flow as a logical story:
+${slideStructure}
 (Adjust the flow if fewer slides)
 
 Rules:
@@ -1019,6 +1046,9 @@ Output ONLY a raw JSON array (no markdown, no explanation) like this:
           const slideSubheading = slideTexts[i]?.subheading || hook;
           const brandedSlideUrl = await applyVisualOverlays(rawSlideUrl, brand.logoUrl, slideHeading, slideSubheading, aspectRatio);
           generatedSlides.push(brandedSlideUrl);
+          
+          // --- UPDATE JOB PROGRESS FOR FRONTEND POLL ---
+          await GenerationJob.findByIdAndUpdate(jobId, { completedCount: i + 1 }).catch(() => {});
         } else {
           console.warn(`       ⚠️  Slide ${i+1} returned empty URL`);
         }

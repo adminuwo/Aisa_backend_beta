@@ -84,7 +84,9 @@ export const getToolCost = (toolName, body = {}) => {
     if (normalizedTool === 'ai_ads_agent') {
         const baseCost = featureCosts.ai_ads_agent !== undefined ? featureCosts.ai_ads_agent : (defaults.ai_ads_agent || 241);
         if (body?.postFormat === 'carousel') {
-            return baseCost * 5; // Carousels generate 5 separate images
+            // Charge exactly for the number of slides selected (2, 3, or 4)
+            const slideCount = Math.min(Math.max(parseInt(body?.carouselCount) || 3, 2), 4);
+            return baseCost * slideCount;
         }
         return baseCost;
     }

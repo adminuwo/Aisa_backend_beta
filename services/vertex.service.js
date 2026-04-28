@@ -311,6 +311,7 @@ export const AskVertexRaw = async (prompt, options = {}) => {
                 generationConfig: {
                     maxOutputTokens: options.maxOutputTokens || 4096,
                     temperature: options.temperature || 0.7,
+                    ...(options.isJson && { responseMimeType: "application/json" })
                 },
                 tools: options.useSearch ? [{ googleSearchRetrieval: {} }] : []
             });
@@ -321,6 +322,7 @@ export const AskVertexRaw = async (prompt, options = {}) => {
                 generationConfig: {
                     maxOutputTokens: options.maxOutputTokens || 4096,
                     temperature: options.temperature || 0.7,
+                    ...(options.isJson && { responseMimeType: "application/json" })
                 },
                 tools: options.useSearch ? [{ googleSearchRetrieval: {} }] : []
             });
@@ -328,9 +330,29 @@ export const AskVertexRaw = async (prompt, options = {}) => {
             throw new Error('AI model instance not available');
         }
 
-        const result = await model.generateContent({
-            contents: [{ role: 'user', parts: [{ text: prompt }] }]
-        });
+        let result;
+        try {
+            result = await model.generateContent({
+                contents: [{ role: 'user', parts: [{ text: prompt }] }]
+            });
+        } catch (execErr) {
+            if ((execErr.message.includes("404") || execErr.message.includes("NOT_FOUND")) && selectedModelName !== 'gemini-1.5-flash') {
+                logger.warn(`[AskVertexRaw] Execution failed for ${selectedModelName}. Retrying with gemini-1.5-flash.`);
+                const fallbackModel = genAIInstance.getGenerativeModel({
+                    model: 'gemini-1.5-flash',
+                    generationConfig: { 
+                        maxOutputTokens: options.maxOutputTokens || 4096, 
+                        temperature: options.temperature || 0.7,
+                        ...(options.isJson && { responseMimeType: "application/json" })
+                    }
+                });
+                result = await fallbackModel.generateContent({
+                    contents: [{ role: 'user', parts: [{ text: prompt }] }]
+                });
+            } else {
+                throw execErr;
+            }
+        }
 
         // Handle both @google-cloud/vertexai and @google/generative-ai response formats
         const response = result.response || result;
@@ -475,7 +497,22 @@ export const askVertex = async (prompt, context = null, options = {}) => {
         }
 
         // 3. Generate Content
-        const result = await model.generateContent({ contents: [{ role: 'user', parts }] });
+        let result;
+        try {
+            result = await model.generateContent({ contents: [{ role: 'user', parts }] });
+        } catch (execErr) {
+            if ((execErr.message.includes("404") || execErr.message.includes("NOT_FOUND")) && selectedModelName !== 'gemini-1.5-flash') {
+                logger.warn(`[VERTEX] Execution failed for ${selectedModelName}. Retrying with gemini-1.5-flash.`);
+                const fallbackModel = genAIInstance.getGenerativeModel({
+                    model: 'gemini-1.5-flash',
+                    systemInstruction: systemInstruction,
+                    generationConfig: { maxOutputTokens: 4096 }
+                });
+                result = await fallbackModel.generateContent({ contents: [{ role: 'user', parts }] });
+            } else {
+                throw execErr;
+            }
+        }
         const response = await result.response;
         const candidate = response.candidates?.[0];
 

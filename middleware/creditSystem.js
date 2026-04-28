@@ -52,7 +52,13 @@ const getActionLabel = (url, body) => {
     if (url.includes('/api/knowledge/upload') || url.includes('/api/knowledge/upload-url')) return { action: 'knowledge_base', description: 'AISA Knowledge Base' };
     if (url.includes('/api/legal-toolkit')) return { action: 'legal_toolkit', description: 'AISA AI Legal' };
     if (url.includes('/api/stock/')) return { action: 'aicashflow_tab', description: 'AISA CashFlow Explorer (Tab Access)' };
-    if (url.includes('/api/social-agent/generate/visual-post')) return { action: 'ai_ads_agent', description: 'AI Ads Agent (GPT-4 + Imagen 3)' };
+    if (url.includes('/api/social-agent/generate/visual-post')) {
+        if (body?.postFormat === 'carousel') {
+            const count = Math.min(Math.max(parseInt(body?.carouselCount) || 3, 2), 4);
+            return { action: 'ai_ads_agent', description: `AI Ads Agent — Carousel (${count} slides)` };
+        }
+        return { action: 'ai_ads_agent', description: 'AI Ads Agent (GPT-4 + Imagen 3)' };
+    }
     if (url.includes('/api/social-agent/brand/upload')) return { action: 'brand_setup', description: 'AI Ads Agent (Brand Setup Save)' };
     if (url.includes('/api/social-agent/generate/calendar')) return { action: 'activate_strategy', description: 'AI Ads Agent (Strategy Activation)' };
     if (url.includes('/api/social-agent/content/generate/')) return { action: 'generate_content', description: 'AI Ads Agent (Content Generation)' };
