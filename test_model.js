@@ -4,8 +4,8 @@ dotenv.config();
 
 async function test() {
     try {
-        console.log("Testing gemini-2.5-flash...");
-        const response = await vertexService.AskVertexRaw("Hello", { modelOverride: 'gemini-2.5-flash' });
+        console.log("Testing gemini-1.5-flash...");
+        const response = await vertexService.AskVertexRaw("Hello", { modelOverride: 'gemini-1.5-flash' });
         console.log("Response:", response);
     } catch (err) {
         console.error("Error Message:", err.message);
