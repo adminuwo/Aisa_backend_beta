@@ -102,15 +102,47 @@ export const analyzeCaseDetails = async (rawText, currentData = {}) => {
                     return JSON.parse(bracketMatch[0]);
                 } catch (fallbackParseError) {
                     logger.error(`[LegalIntelligence] Fallback JSON parse failed. Extracted block: ${bracketMatch[0].substring(0, 500)}...`);
-                    throw new Error('No valid JSON found in AI response');
+                    // DO NOT THROW. Return a safe fallback object so the frontend doesn't crash with 500.
                 }
             }
-            throw new Error('No valid JSON found in AI response');
+            
+            logger.warn(`[LegalIntelligence] Returning safe fallback object due to AI parse failure.`);
+            return {
+                executive_summary: `AI Analysis Error: The system could not process the request. It returned: "${cleanJson.substring(0, 200)}..."`,
+                case_strength: 0,
+                win_probability: 0,
+                timeline: [],
+                parties: { plaintiff: { name: "Unknown", role: "Unknown" }, defendant: { name: "Unknown", role: "Unknown" } },
+                evidence: [],
+                legal_research: [],
+                process_steps: [],
+                risk_assessment: { level: "high", reason: "AI Analysis failed to return structured data." },
+                critical_vulnerabilities: ["Data parsing failed."],
+                opponent_strategy: [],
+                primary_relief: "Unknown",
+                strategy_recommendation: ["Please try running the analysis again or contact support if the issue persists."]
+            };
         }
     } catch (error) {
         logger.error(`[LegalIntelligence] Analysis failed: ${error.message}`);
         logger.error(`[LegalIntelligence] Stack trace: ${error.stack}`);
-        throw error; // Throw error to route so it can trigger STEP 2 logic (res.status(500))
+        
+        // Return fallback instead of throwing to prevent 500 error
+        return {
+            executive_summary: `AI Request Failed: ${error.message}`,
+            case_strength: 0,
+            win_probability: 0,
+            timeline: [],
+            parties: { plaintiff: { name: "Unknown", role: "Unknown" }, defendant: { name: "Unknown", role: "Unknown" } },
+            evidence: [],
+            legal_research: [],
+            process_steps: [],
+            risk_assessment: { level: "high", reason: "Backend request failed." },
+            critical_vulnerabilities: [],
+            opponent_strategy: [],
+            primary_relief: "Unknown",
+            strategy_recommendation: []
+        };
     }
 };
 
