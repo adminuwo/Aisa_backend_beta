@@ -214,6 +214,12 @@ export const retrieveContextFromRag = async (query, topK = 8, category = 'LEGAL'
  */
 export const analyzeRAGRequirements = async (query) => {
     try {
+        const needsRAG = await detectRAGNeed(query);
+        
+        if (!needsRAG) {
+            return { needsRAG: false, rewrittenQuery: query };
+        }
+
         const rewriteTemplate = configService.getConfig('QUERY_REWRITE_PROMPT', 'Rewrite the user question for search: {user_question}');
         const rewritePrompt = rewriteTemplate.replace('{user_question}', query);
 
