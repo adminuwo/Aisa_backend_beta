@@ -1,5 +1,6 @@
 import * as vertexService from './vertex.service.js';
 import logger from '../utils/logger.js';
+import { safeParseLLMJson } from '../utils/jsonUtils.js';
 
 /**
  * analyzeCaseDetails
@@ -82,47 +83,23 @@ export const analyzeCaseDetails = async (rawText, currentData = {}) => {
             isJson: true
         });
 
-        // Strip markdown code fences if present
-        let cleanJson = response.trim();
-        const firstBrace = cleanJson.indexOf('{');
-        const lastBrace = cleanJson.lastIndexOf('}');
-        if (firstBrace !== -1 && lastBrace !== -1) {
-            cleanJson = cleanJson.substring(firstBrace, lastBrace + 1);
-        }
+        const fallback = {
+            executive_summary: `AI Analysis Error: The system could not process the request. It returned: "${response.substring(0, 200)}..."`,
+            case_strength: 0,
+            win_probability: 0,
+            timeline: [],
+            parties: { plaintiff: { name: "Unknown", role: "Unknown" }, defendant: { name: "Unknown", role: "Unknown" } },
+            evidence: [],
+            legal_research: [],
+            process_steps: [],
+            risk_assessment: { level: "high", reason: "AI Analysis failed to return structured data." },
+            critical_vulnerabilities: ["Data parsing failed."],
+            opponent_strategy: [],
+            primary_relief: "Unknown",
+            strategy_recommendation: ["Please try running the analysis again or contact support if the issue persists."]
+        };
 
-        // First attempt: direct parse
-        try {
-            return JSON.parse(cleanJson);
-        } catch (parseError) {
-            logger.error(`[LegalIntelligence] JSON parse failed. Raw response snippet: ${cleanJson.substring(0, 500)}...`);
-            // Fallback: extract the first JSON object block
-            const bracketMatch = cleanJson.match(/\{[\s\S]*\}/);
-            if (bracketMatch) {
-                try {
-                    return JSON.parse(bracketMatch[0]);
-                } catch (fallbackParseError) {
-                    logger.error(`[LegalIntelligence] Fallback JSON parse failed. Extracted block: ${bracketMatch[0].substring(0, 500)}...`);
-                    // DO NOT THROW. Return a safe fallback object so the frontend doesn't crash with 500.
-                }
-            }
-            
-            logger.warn(`[LegalIntelligence] Returning safe fallback object due to AI parse failure.`);
-            return {
-                executive_summary: `AI Analysis Error: The system could not process the request. It returned: "${cleanJson.substring(0, 200)}..."`,
-                case_strength: 0,
-                win_probability: 0,
-                timeline: [],
-                parties: { plaintiff: { name: "Unknown", role: "Unknown" }, defendant: { name: "Unknown", role: "Unknown" } },
-                evidence: [],
-                legal_research: [],
-                process_steps: [],
-                risk_assessment: { level: "high", reason: "AI Analysis failed to return structured data." },
-                critical_vulnerabilities: ["Data parsing failed."],
-                opponent_strategy: [],
-                primary_relief: "Unknown",
-                strategy_recommendation: ["Please try running the analysis again or contact support if the issue persists."]
-            };
-        }
+        return safeParseLLMJson(response, fallback);
     } catch (error) {
         logger.error(`[LegalIntelligence] Analysis failed: ${error.message}`);
         logger.error(`[LegalIntelligence] Stack trace: ${error.stack}`);
@@ -175,18 +152,7 @@ export const analyzeDocumentContent = async (content, fileName) => {
             isJson: true
         });
 
-        let cleanJson = response.trim();
-        const firstBrace = cleanJson.indexOf('{');
-        const lastBrace = cleanJson.lastIndexOf('}');
-        if (firstBrace !== -1 && lastBrace !== -1) {
-            cleanJson = cleanJson.substring(firstBrace, lastBrace + 1);
-        }
-        try {
-            return JSON.parse(cleanJson);
-        } catch (parseError) {
-            logger.error(`[LegalIntelligence] Document JSON parse failed. Raw response snippet: ${cleanJson.substring(0, 500)}...`);
-            return null;
-        }
+        return safeParseLLMJson(response);
     } catch (error) {
         logger.error(`[LegalIntelligence] Document analysis failed: ${error.message}`);
         logger.error(`[LegalIntelligence] Stack trace: ${error.stack}`);
