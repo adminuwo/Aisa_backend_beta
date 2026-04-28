@@ -312,7 +312,8 @@ router.post("/", optionalVerifyToken, identifyGuest, async (req, res) => {
       sources: finalResponse.sources,
       imageUrl: finalResponse.imageUrl,
       videoUrl: finalResponse.videoUrl,
-      conversion: finalResponse.conversion
+      conversion: finalResponse.conversion,
+      suggestions: finalResponse.suggestions
     });
 
     session.lastModified = Date.now();

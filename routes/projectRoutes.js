@@ -108,64 +108,45 @@ router.put('/:id', verifyToken, async (req, res) => {
     }
 });
 
-// @desc    Analyze case details and update project
-// @route   POST /api/projects/:id/analyze  (also aliased as /api/cases/:id/auto-analyze)
-// @access  Private
-router.post('/:id/analyze', verifyToken, async (req, res) => {
+// Shared analysis handler to keep code DRY and consistent
+const performCaseAnalysis = async (req, res) => {
     try {
         const { rawText } = req.body;
-        console.log(`[AutoAnalyze] Starting analysis for case: ${req.params.id}`);
-
         const project = await Project.findOne({ _id: req.params.id, userId: req.user.id });
+        
         if (!project) {
-            console.warn(`[AutoAnalyze] Case not found: ${req.params.id}`);
             return res.status(404).json({ error: 'Case not found' });
         }
 
         const inputText = rawText || project.caseSummary || project.name;
-        console.log(`[AutoAnalyze] Sending to AI: "${inputText.substring(0, 80)}..."`);
-
         const aiResponse = await legalIntelligenceService.analyzeCaseDetails(inputText, project);
         
-        let aiData;
-        try {
-            aiData = typeof aiResponse === "string" ? JSON.parse(aiResponse) : aiResponse;
-        } catch (err) {
-            console.error("❌ JSON Parse Failed:", err);
-            return res.status(500).json({ error: "AI response invalid" });
-        }
+        const aiData = typeof aiResponse === "string" ? JSON.parse(aiResponse) : aiResponse;
 
+        // Map AI keys to normalized local keys
         const normalized = {
-            summary: aiData.executive_summary,
-            strength: aiData.case_strength,
-            probability: aiData.win_probability,
-
+            summary: aiData.executive_summary || aiData.summary,
+            strength: aiData.case_strength ?? aiData.strengthScore ?? aiData.strength ?? 0,
+            probability: aiData.win_probability ?? aiData.winProbability ?? aiData.probability ?? 0,
             timeline: aiData.timeline || [],
             evidence: aiData.evidence || [],
-            research: aiData.legal_research || [],
-            steps: aiData.process_steps || [],
-
-            risk: aiData.risk_assessment || {},
-            vulnerabilities: aiData.critical_vulnerabilities || [],
-            opponent: aiData.opponent_strategy || [],
-
-            relief: aiData.primary_relief || "",
-            strategy: aiData.strategy_recommendation || []
+            research: aiData.legal_research || aiData.research || [],
+            steps: aiData.process_steps || aiData.steps || [],
+            risk: aiData.risk_assessment || aiData.risk || {},
+            vulnerabilities: aiData.critical_vulnerabilities || aiData.weakPoints || [],
+            opponent: aiData.opponent_strategy || aiData.opponentStrategies || [],
+            relief: aiData.primary_relief || aiData.reliefGoals || "",
+            strategy: aiData.strategy_recommendation || aiData.strategyRecommendations || []
         };
 
-        console.log(`[AutoAnalyze] AI response received. Strength: ${normalized.strength}, Win: ${normalized.probability}`);
-
-        // Map normalized fields → MongoDB model fields
         const updateData = {
             caseSummary: normalized.summary || project.caseSummary,
             clientName: project.clientName || aiData.parties?.plaintiff?.name || '',
             opponentName: project.opponentName || aiData.parties?.defendant?.name || '',
-            stage: project.stage,
-            priority: project.priority,
             reliefGoals: normalized.relief || project.reliefGoals,
             intelligence: {
-                strengthScore: normalized.strength ?? 50,
-                winProbability: normalized.probability ?? 50,
+                strengthScore: normalized.strength,
+                winProbability: normalized.probability,
                 riskLevel: normalized.risk?.level || 'Medium',
                 weakPoints: [...(normalized.vulnerabilities || []), normalized.risk?.reason].filter(Boolean),
                 opponentStrategies: normalized.opponent || [],
@@ -177,9 +158,9 @@ router.post('/:id/analyze', verifyToken, async (req, res) => {
                 event: f.event || f.title,
                 description: f.description || f.event || f.title
             })),
-            legalIssues: normalized.research.map(r => r.law),
+            legalIssues: normalized.research.map(r => r.law || r.lawName),
             tasks: normalized.steps.map(p => ({
-                title: p.step,
+                title: p.step || p.title,
                 status: 'Pending',
                 priority: p.priority || 'Medium'
             })),
@@ -190,7 +171,7 @@ router.post('/:id/analyze', verifyToken, async (req, res) => {
                 uploadDate: new Date()
             })),
             research: normalized.research.map(r => ({
-                lawName: r.law,
+                lawName: r.law || r.lawName,
                 section: r.section || '',
                 description: r.description
             }))
@@ -202,115 +183,19 @@ router.post('/:id/analyze', verifyToken, async (req, res) => {
             { new: true }
         );
 
-        console.log(`[AutoAnalyze] Case updated successfully: ${updatedProject._id}`);
         res.json(updatedProject);
     } catch (error) {
-        console.error('[AutoAnalyze] Failed:', error.message);
-        console.error('[AutoAnalyze] Stack Trace:', error.stack);
+        console.error('[CaseAnalysis] Error:', error.message);
         res.status(500).json({ error: 'Failed to analyze case', details: error.message });
     }
-});
+};
+
+// @desc    Analyze case details and update project
+// @route   POST /api/projects/:id/analyze
+router.post('/:id/analyze', verifyToken, performCaseAnalysis);
 
 // @desc    Auto-Analyze alias — POST /api/cases/:id/auto-analyze
-// @access  Private
-router.post('/:id/auto-analyze', verifyToken, async (req, res) => {
-    try {
-        const { rawText } = req.body;
-        console.log(`[AutoAnalyze] /auto-analyze called for case: ${req.params.id}`);
-
-        const project = await Project.findOne({ _id: req.params.id, userId: req.user.id });
-        if (!project) {
-            console.warn(`[AutoAnalyze] Case not found: ${req.params.id} for user: ${req.user.id}`);
-            return res.status(404).json({ error: 'Case not found' });
-        }
-
-        const inputText = rawText || project.caseSummary || project.name;
-        console.log(`[AutoAnalyze] Sending to AI: "${inputText.substring(0, 80)}..."`);
-
-        const aiResponse = await legalIntelligenceService.analyzeCaseDetails(inputText, project);
-        
-        let aiData;
-        try {
-            aiData = typeof aiResponse === "string" ? JSON.parse(aiResponse) : aiResponse;
-        } catch (err) {
-            console.error("❌ JSON Parse Failed:", err);
-            return res.status(500).json({ error: "AI response invalid" });
-        }
-
-        const normalized = {
-            summary: aiData.executive_summary,
-            strength: aiData.case_strength,
-            probability: aiData.win_probability,
-
-            timeline: aiData.timeline || [],
-            evidence: aiData.evidence || [],
-            research: aiData.legal_research || [],
-            steps: aiData.process_steps || [],
-
-            risk: aiData.risk_assessment || {},
-            vulnerabilities: aiData.critical_vulnerabilities || [],
-            opponent: aiData.opponent_strategy || [],
-
-            relief: aiData.primary_relief || "",
-            strategy: aiData.strategy_recommendation || []
-        };
-
-        console.log(`[AutoAnalyze] AI done — Strength: ${normalized.strength}, Win: ${normalized.probability}`);
-
-        const updateData = {
-            caseSummary: normalized.summary || project.caseSummary,
-            clientName: project.clientName || aiData.parties?.plaintiff?.name || '',
-            opponentName: project.opponentName || aiData.parties?.defendant?.name || '',
-            stage: project.stage,
-            priority: project.priority,
-            reliefGoals: normalized.relief || project.reliefGoals,
-            intelligence: {
-                strengthScore: normalized.strength ?? 50,
-                winProbability: normalized.probability ?? 50,
-                riskLevel: normalized.risk?.level || 'Medium',
-                weakPoints: [...(normalized.vulnerabilities || []), normalized.risk?.reason].filter(Boolean),
-                opponentStrategies: normalized.opponent || [],
-                strategyRecommendations: normalized.strategy || [],
-                missingEvidence: []
-            },
-            facts: normalized.timeline.map(f => ({
-                date: f.date ? new Date(f.date) : null,
-                event: f.event || f.title,
-                description: f.description || f.event || f.title
-            })),
-            legalIssues: normalized.research.map(r => r.law),
-            tasks: normalized.steps.map(p => ({
-                title: p.step,
-                status: 'Pending',
-                priority: p.priority || 'Medium'
-            })),
-            evidence: normalized.evidence.map(e => ({
-                name: e.title || e.name || e.description,
-                type: e.type || 'Document',
-                status: e.strength || 'Moderate',
-                uploadDate: new Date()
-            })),
-            research: normalized.research.map(r => ({
-                lawName: r.law,
-                section: r.section || '',
-                description: r.description
-            }))
-        };
-
-        const updatedProject = await Project.findOneAndUpdate(
-            { _id: req.params.id, userId: req.user.id },
-            { $set: updateData },
-            { new: true }
-        );
-
-        console.log(`[AutoAnalyze] ✅ Saved to DB. Tasks: ${updatedProject.tasks?.length}, Evidence: ${updatedProject.evidence?.length}`);
-        res.json(updatedProject);
-    } catch (error) {
-        console.error('[AutoAnalyze] ❌ Error:', error.message);
-        console.error('[AutoAnalyze] Stack Trace:', error.stack);
-        res.status(500).json({ error: 'Failed to analyze case', details: error.message });
-    }
-});
+router.post('/:id/auto-analyze', verifyToken, performCaseAnalysis);
 
 
 // @desc    Delete a project

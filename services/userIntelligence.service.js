@@ -4,6 +4,7 @@ import ConversationMessage from '../models/ConversationMessage.js';
 import * as vertexService from './vertex.service.js';
 import logger from '../utils/logger.js';
 import mongoose from 'mongoose';
+import { safeParseLLMJson } from '../utils/jsonUtils.js';
 
 class UserIntelligenceService {
     
@@ -97,7 +98,7 @@ class UserIntelligenceService {
 
         try {
             const resultText = await vertexService.askVertex(prompt, null, { mode: 'JSON' });
-            const data = JSON.parse(resultText.replace(/```json\s*|\s*```/g, ''));
+            const data = safeParseLLMJson(resultText, {});
             
             if (data.currentWork) profile.onboarding.currentWork = data.currentWork;
             if (data.targetSkills) profile.onboarding.targetSkills = data.targetSkills;
@@ -134,7 +135,7 @@ class UserIntelligenceService {
 
         try {
             const resultText = await vertexService.askVertex(prompt, null, { mode: 'JSON' });
-            const data = JSON.parse(resultText.replace(/```json\s*|\s*```/g, ''));
+            const data = safeParseLLMJson(resultText, {});
             
             profile.psychology = { ...profile.psychology, ...data };
             await profile.save();
