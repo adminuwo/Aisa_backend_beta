@@ -206,6 +206,7 @@ router.post('/:id/analyze', verifyToken, async (req, res) => {
         res.json(updatedProject);
     } catch (error) {
         console.error('[AutoAnalyze] Failed:', error.message);
+        console.error('[AutoAnalyze] Stack Trace:', error.stack);
         res.status(500).json({ error: 'Failed to analyze case', details: error.message });
     }
 });
@@ -306,6 +307,7 @@ router.post('/:id/auto-analyze', verifyToken, async (req, res) => {
         res.json(updatedProject);
     } catch (error) {
         console.error('[AutoAnalyze] ❌ Error:', error.message);
+        console.error('[AutoAnalyze] Stack Trace:', error.stack);
         res.status(500).json({ error: 'Failed to analyze case', details: error.message });
     }
 });

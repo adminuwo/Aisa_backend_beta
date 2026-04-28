@@ -311,6 +311,7 @@ export const AskVertexRaw = async (prompt, options = {}) => {
                 generationConfig: {
                     maxOutputTokens: options.maxOutputTokens || 4096,
                     temperature: options.temperature || 0.7,
+                    ...(options.isJson && { responseMimeType: "application/json" })
                 },
                 tools: options.useSearch ? [{ googleSearchRetrieval: {} }] : []
             });
@@ -321,6 +322,7 @@ export const AskVertexRaw = async (prompt, options = {}) => {
                 generationConfig: {
                     maxOutputTokens: options.maxOutputTokens || 4096,
                     temperature: options.temperature || 0.7,
+                    ...(options.isJson && { responseMimeType: "application/json" })
                 },
                 tools: options.useSearch ? [{ googleSearchRetrieval: {} }] : []
             });
@@ -338,7 +340,11 @@ export const AskVertexRaw = async (prompt, options = {}) => {
                 logger.warn(`[AskVertexRaw] Execution failed for ${selectedModelName}. Retrying with gemini-1.5-flash.`);
                 const fallbackModel = genAIInstance.getGenerativeModel({
                     model: 'gemini-1.5-flash',
-                    generationConfig: { maxOutputTokens: options.maxOutputTokens || 4096, temperature: options.temperature || 0.7 }
+                    generationConfig: { 
+                        maxOutputTokens: options.maxOutputTokens || 4096, 
+                        temperature: options.temperature || 0.7,
+                        ...(options.isJson && { responseMimeType: "application/json" })
+                    }
                 });
                 result = await fallbackModel.generateContent({
                     contents: [{ role: 'user', parts: [{ text: prompt }] }]

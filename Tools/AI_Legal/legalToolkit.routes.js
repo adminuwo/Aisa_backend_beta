@@ -107,7 +107,8 @@ ${message}
         });
 
     } catch (error) {
-        logger.error(`[LegalToolkit] Error: ${error.message}`);
+        logger.error(`[LegalToolkit] Error executing tool ${req.body?.toolName || 'unknown'}: ${error.message}`);
+        logger.error(`[LegalToolkit] Stack Trace: ${error.stack}`);
 
         return res.status(500).json({
             success: false,

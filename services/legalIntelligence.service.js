@@ -78,27 +78,38 @@ export const analyzeCaseDetails = async (rawText, currentData = {}) => {
         const response = await vertexService.AskVertexRaw(prompt, {
             maxOutputTokens: 3000,
             temperature: 0.1,
-            modelOverride: 'gemini-2.5-flash'
+            modelOverride: 'gemini-2.5-flash',
+            isJson: true
         });
 
         // Strip markdown code fences if present
         let cleanJson = response.trim();
-        if (cleanJson.startsWith('```')) {
-            const match = cleanJson.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-            if (match && match[1]) cleanJson = match[1].trim();
+        const firstBrace = cleanJson.indexOf('{');
+        const lastBrace = cleanJson.lastIndexOf('}');
+        if (firstBrace !== -1 && lastBrace !== -1) {
+            cleanJson = cleanJson.substring(firstBrace, lastBrace + 1);
         }
 
         // First attempt: direct parse
         try {
             return JSON.parse(cleanJson);
-        } catch {
+        } catch (parseError) {
+            logger.error(`[LegalIntelligence] JSON parse failed. Raw response snippet: ${cleanJson.substring(0, 500)}...`);
             // Fallback: extract the first JSON object block
             const bracketMatch = cleanJson.match(/\{[\s\S]*\}/);
-            if (bracketMatch) return JSON.parse(bracketMatch[0]);
+            if (bracketMatch) {
+                try {
+                    return JSON.parse(bracketMatch[0]);
+                } catch (fallbackParseError) {
+                    logger.error(`[LegalIntelligence] Fallback JSON parse failed. Extracted block: ${bracketMatch[0].substring(0, 500)}...`);
+                    throw new Error('No valid JSON found in AI response');
+                }
+            }
             throw new Error('No valid JSON found in AI response');
         }
     } catch (error) {
         logger.error(`[LegalIntelligence] Analysis failed: ${error.message}`);
+        logger.error(`[LegalIntelligence] Stack trace: ${error.stack}`);
         throw error; // Throw error to route so it can trigger STEP 2 logic (res.status(500))
     }
 };
@@ -128,17 +139,25 @@ export const analyzeDocumentContent = async (content, fileName) => {
         const response = await vertexService.AskVertexRaw(prompt, {
             maxOutputTokens: 1024,
             temperature: 0.1,
-            modelOverride: 'gemini-2.5-flash'
+            modelOverride: 'gemini-2.5-flash',
+            isJson: true
         });
 
         let cleanJson = response.trim();
-        if (cleanJson.startsWith('```')) {
-            const match = cleanJson.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-            if (match && match[1]) cleanJson = match[1].trim();
+        const firstBrace = cleanJson.indexOf('{');
+        const lastBrace = cleanJson.lastIndexOf('}');
+        if (firstBrace !== -1 && lastBrace !== -1) {
+            cleanJson = cleanJson.substring(firstBrace, lastBrace + 1);
         }
-        return JSON.parse(cleanJson);
+        try {
+            return JSON.parse(cleanJson);
+        } catch (parseError) {
+            logger.error(`[LegalIntelligence] Document JSON parse failed. Raw response snippet: ${cleanJson.substring(0, 500)}...`);
+            return null;
+        }
     } catch (error) {
         logger.error(`[LegalIntelligence] Document analysis failed: ${error.message}`);
+        logger.error(`[LegalIntelligence] Stack trace: ${error.stack}`);
         return null;
     }
 };
