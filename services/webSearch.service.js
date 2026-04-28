@@ -14,13 +14,13 @@ dotenv.config();
 export const shouldSearch = async (query) => {
     try {
         const lower = query.toLowerCase();
-        
+
         // Fast-pass: Check for common real-time keywords to skip AI detection and save time
         const searchKeywords = [
-            'today', 'match', 'score', 'weather', 'price', 'news', 'latest', 'live', 
+            'today', 'match', 'score', 'weather', 'price', 'news', 'latest', 'live',
             'stock', 'cricket', 'ipl', 'football', 'result', 'upcoming', 'current'
         ];
-        
+
         if (searchKeywords.some(keyword => lower.includes(keyword))) {
             logger.info(`[WebSearch] Fast-pass YES for: "${query}"`);
             return true;
@@ -54,7 +54,7 @@ export const performSearch = async (query, userLanguage = 'English') => {
     try {
         logger.info(`[WebSearch] Level 1: super-fast Gemini search for: "${query}"`);
         const targetLang = userLanguage === 'Hinglish' ? 'Hinglish (Romanized Hindi)' : userLanguage;
-        
+
         const systemPrompt = configService.getConfig('WEB_SEARCH_RULES') + `
         LANGUAGE: ${targetLang}
         MANDATORY: Respond strictly in ${targetLang}. Match user script/tone.`;
@@ -102,7 +102,7 @@ export const performSearch = async (query, userLanguage = 'English') => {
         const searchData = await performWebSearch(query, 5);
         if (!searchData || !searchData.results || searchData.results.length === 0) return null;
 
-        const snippets = searchData.results.map((r, i) => `${i+1}. [${r.title}] ${r.snippet} (${r.link})`).join('\n\n');
+        const snippets = searchData.results.map((r, i) => `${i + 1}. [${r.title}] ${r.snippet} (${r.link})`).join('\n\n');
         const summary = await askVertex(`Answer "${query}" based on:\n${snippets}`, null, {
             systemInstruction: `Explain in ${userLanguage}. Be direct.`
         });
