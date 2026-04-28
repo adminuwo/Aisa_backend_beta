@@ -97,9 +97,14 @@ export const quickAnalysis = async (req, res) => {
       // 1. PERSISTENT STORAGE
       if (workspaceId && workspaceId !== 'undefined' && workspaceId !== 'null') {
         try {
+          const brand = await BrandProfile.findOne({ workspaceId });
+          const safeBrandName = brand?.companyName 
+            ? brand.companyName.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase() 
+            : workspaceId;
+
           const folder = file.mimetype.startsWith('image/')
-            ? `brands/${workspaceId}/logo`
-            : `brands/${workspaceId}/guidelines`;
+            ? `brands/${safeBrandName}/logo`
+            : `brands/${safeBrandName}/guidelines`;
 
           const uploadRes = await uploadToGCS(file, folder);
           gcsUrl = uploadRes.url;
@@ -115,7 +120,6 @@ export const quickAnalysis = async (req, res) => {
             mimeType: file.mimetype
           }).save();
 
-          const brand = await BrandProfile.findOne({ workspaceId });
           if (brand) {
             if (file.mimetype.startsWith('image/')) {
               brand.logoUrl = gcsUrl;

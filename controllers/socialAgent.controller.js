@@ -261,30 +261,37 @@ export const uploadBrandAssets = async (req, res) => {
     brandProfile.brandColors = results.structuredIdentity.color_palette;
     brandProfile.toneOfVoice = results.structuredIdentity.tone || toneOfVoice;
     brandProfile.ctaStyle = results.structuredIdentity.cta_style || ctaStyle;
-    brandProfile.companyOverviewText = results.rawKnowledgeBase; 
-    
+    brandProfile.companyOverviewText = results.rawKnowledgeBase;
+
     // Sync new fields to structured identity if AI provided better ones, else keep manual
     brandProfile.targetIndustry = results.structuredIdentity.industry || targetIndustry || brandProfile.targetIndustry;
     brandProfile.targetAudience = results.structuredIdentity.target_audience || targetAudience || brandProfile.targetAudience;
 
+    // Build a clean, human-readable GCS folder name from the brand name
+    const resolvedBrandName = brandProfile.companyName || companyName || '';
+    const safeBrandSlug = resolvedBrandName.trim()
+      ? resolvedBrandName.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
+      : workspaceId;
+    console.log(`[Stage 1] GCS brand slug: "${safeBrandSlug}"`);
+
     // 2. Handle Logo Upload
     if (logoFile) {
-      const { url } = await socialAgentService.uploadToGCS(logoFile, `brands/${workspaceId}/logo`);
+      const { url } = await socialAgentService.uploadToGCS(logoFile, `brands/${safeBrandSlug}/logo`);
       brandProfile.logoUrl = url;
       await new UploadAsset({
         workspaceId, assetType: 'logo', gcsUrl: url,
         fileName: logoFile.originalname, mimeType: logoFile.mimetype
       }).save();
-      console.log(`[Stage 1] Logo preserved in GCS: ${url}`);
+      console.log(`[Stage 1] Logo preserved in GCS: brands/${safeBrandSlug}/logo/`);
     } else if (logoUrl) {
       brandProfile.logoUrl = logoUrl;
     }
 
-    // 3. Handle Overview PDF Uploads (Multiple) - Parallel Execution
+    // 3. Handle Overview PDF Uploads (Multiple) — stored under a readable brand folder
     if (overviewFiles.length > 0) {
-      console.log(`[Stage 1] Dispatching ${overviewFiles.length} docs to GCS parallel pipeline...`);
+      console.log(`[Stage 1] Dispatching ${overviewFiles.length} docs to GCS: brands/${safeBrandSlug}/strategy_docs/`);
       const uploadPromises = overviewFiles.map(async (file) => {
-        const { url } = await socialAgentService.uploadToGCS(file, `brands/${workspaceId}/overview`);
+        const { url } = await socialAgentService.uploadToGCS(file, `brands/${safeBrandSlug}/strategy_docs`);
         await new UploadAsset({
           workspaceId, assetType: 'overview', gcsUrl: url,
           fileName: file.originalname, mimeType: file.mimetype
@@ -295,7 +302,7 @@ export const uploadBrandAssets = async (req, res) => {
       const urls = await Promise.all(uploadPromises);
       brandProfile.companyOverviewFileUrls = urls;
       brandProfile.companyOverviewFileUrl = urls[0]; // Legacy primary
-      console.log(`[Stage 1] ${urls.length} Strategy Docs preserved in GCS.`);
+      console.log(`[Stage 1] ${urls.length} Strategy Docs saved to GCS: brands/${safeBrandSlug}/strategy_docs/`);
     }
 
     // --- OTHER PREFERENCES ---
@@ -409,12 +416,19 @@ export const uploadCalendar = async (req, res) => {
     const fileExt = path.extname(file.originalname).toUpperCase().replace('.', '');
     console.log(`[CALENDAR UPLOAD] Starting processing for file: ${file.originalname}, ext: ${fileExt}`);
 
-    // 1. Upload to GCS — Organized path: brands/{workspaceId}/calendar/{filename}
+    // Build a clean, human-readable GCS folder name from the brand name
+    const brandInfo = await BrandProfile.findOne({ workspaceId });
+    const resolvedBrandName = brandInfo?.companyName || '';
+    const safeBrandSlug = resolvedBrandName.trim()
+      ? resolvedBrandName.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
+      : workspaceId;
+
+    // 1. Upload to GCS — Organized path: brands/{brand_name}/content_calendar/{filename}
     let url;
     try {
-      const gcsResult = await socialAgentService.uploadToGCS(file, `brands/${workspaceId}/calendar`);
+      const gcsResult = await socialAgentService.uploadToGCS(file, `brands/${safeBrandSlug}/content_calendar`);
       url = gcsResult.url;
-      console.log(`[CALENDAR UPLOAD] GCS Upload successful → brands/${workspaceId}/calendar/`);
+      console.log(`[CALENDAR UPLOAD] GCS Upload successful → brands/${safeBrandSlug}/content_calendar/`);
     } catch (gcsErr) {
       console.error(`[CALENDAR UPLOAD] GCS Upload failed: ${gcsErr.message}`);
       throw new Error(`GCS Upload failed: ${gcsErr.message}`);

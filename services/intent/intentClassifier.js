@@ -10,7 +10,7 @@ import logger from '../../utils/logger.js';
 import { buildToolListForPrompt } from './toolRegistry.js';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const CLASSIFIER_MODEL = 'gpt-4o-mini';
+const CLASSIFIER_MODEL = 'gpt-5.4';
 const CONFIDENCE_THRESHOLD = 0.75;
 
 /**

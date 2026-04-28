@@ -45,11 +45,12 @@ router.post('/execute', verifyToken, creditMiddleware, async (req, res) => {
         const systemPrompt = getLegalPrompt(toolName);
 
         // 🔥 STEP 2: FORCE TOOL MODE (ALIGNED WITH DRAFT-FIRST WORKFLOW)
-        const isDraftMaker = toolName === 'legal_draft_maker';
+        const draftingTools = ['legal_draft_maker', 'legal_notice_generator', 'legal_fir_generator', 'legal_affidavit_generator', 'legal_free_chat', 'legal_my_case'];
+        const isDraftingTool = draftingTools.includes(toolName);
         const isFollowUp = conversationHistory && conversationHistory.length > 0;
         
-        const enforcedMessage = isDraftMaker 
-            ? `${isFollowUp ? '📝 FOLLOW-UP DATA AND UPDATES FOR DRAFT:' : '⚖️ DRAFTING REQUEST:'}\n${message}` 
+        const enforcedMessage = isDraftingTool 
+            ? `${isFollowUp ? '📝 FOLLOW-UP DATA AND UPDATES:' : '⚖️ REQUEST:'}\n${message}` 
             : `🚨 TOOL MODE: ${toolName}
 
 ### 🎯 TASK:
@@ -86,7 +87,8 @@ ${message}
         let finalReply = responseData.reply.trim();
         
         // 🏷️ ENSURE TOOL TAG EXISTS (UI FIX) - Skip for Draft Maker for clean PDF output
-        if (!isDraftMaker && !finalReply.startsWith('**[ACTIVE TOOL:')) {
+        // 🏷️ ENSURE TOOL TAG EXISTS (UI FIX) - Skip for Drafting Tools for clean output
+        if (!isDraftingTool && !finalReply.startsWith('**[ACTIVE TOOL:')) {
             const toolDisplayName = tool.name || toolName;
             finalReply = `**[ACTIVE TOOL: ${toolDisplayName}]**\n\n` + finalReply;
         }
@@ -105,7 +107,8 @@ ${message}
         });
 
     } catch (error) {
-        logger.error(`[LegalToolkit] Error: ${error.message}`);
+        logger.error(`[LegalToolkit] Error executing tool ${req.body?.toolName || 'unknown'}: ${error.message}`);
+        logger.error(`[LegalToolkit] Stack Trace: ${error.stack}`);
 
         return res.status(500).json({
             success: false,

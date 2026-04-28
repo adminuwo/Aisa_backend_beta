@@ -15,10 +15,9 @@ const GEMINI_IMAGE_MODELS = [
     'gemini-2.5-flash-image',
     'gemini-3.1-flash-image-preview',
     'gemini-3-pro-image-preview',
-    'gemini-2.5-flash-image',
 ];
 
-const DEFAULT_IMAGE_MODEL = 'gemini-2.5-flash-image';
+const DEFAULT_IMAGE_MODEL = 'gemini-3.1-flash-image-preview';
 
 const getGenAIClient = () => new GoogleGenAI({
     vertexai: true,

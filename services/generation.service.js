@@ -1,6 +1,7 @@
 import logger from '../utils/logger.js';
 import * as vertexService from './vertex.service.js';
 import { AskOpenAIRaw } from './openai.service.js';
+import { AskVertexRaw } from './vertex.service.js';
 import * as socialAgentService from './socialAgent.service.js';
 import SocialAgentWorkspace from '../models/SocialAgentWorkspace.js';
 import BrandProfile from '../models/BrandProfile.js';
@@ -182,6 +183,7 @@ export const generate30DayStrategy = async (workspaceId) => {
       
       --- BRAND KNOWLEDGE ---
       BRAND DNA: ${brand.extractedBrandSummary || 'Not specified'}
+      DOCUMENT CONTEXT: ${brand.companyOverviewText ? brand.companyOverviewText.substring(0, 3000) : 'No documents uploaded'}
 
       OUTPUT JSON (STRICT):
       {
@@ -251,7 +253,8 @@ export const generate30DayStrategy = async (workspaceId) => {
         TONE/VOICE: ${brand.toneOfVoice || 'Professional'}
         CTA STYLE: ${brand.ctaStyle || 'Direct & Authoritative'}
         THEME: ${strategyDoc.weekly_themes[weekNum] || strategyDoc.weekly_themes[0] || "General"}
-        DNA INSIGHTS: ${brand.extractedBrandSummary || 'Not specified'}
+        BRAND DNA: ${brand.extractedBrandSummary || 'Not specified'}
+        DOCUMENT CONTEXT: ${brand.companyOverviewText ? brand.companyOverviewText.substring(0, 3000) : 'No documents uploaded'}
         STRATEGY CONTEXT: ${strategyDoc.strategy_summary}
         PLAN: Generate ${postsForThisChunk} high-quality, unique posts spread across this ${daysInThisChunk}-day period.
 
@@ -586,21 +589,61 @@ const applyVisualOverlays = async (imageUrl, logoUrl, headingText, subheadingTex
     // 2. Download the brand logo as base64 (if available)
     let logoBase64 = null;
     let logoMime = null;
+
+    // Gemini only accepts these image formats as inlineData input
+    const GEMINI_SUPPORTED_MIMES = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'image/heic', 'image/heif'];
+
     if (logoUrl) {
       try {
-        const logoResponse = await axios.get(logoUrl, { responseType: 'arraybuffer', timeout: 20000 });
-        const rawBuffer = Buffer.from(logoResponse.data);
+        let logoResponse = await axios.get(logoUrl, { responseType: 'arraybuffer', timeout: 20000 });
+        let rawBuffer = Buffer.from(logoResponse.data);
+        let rawContentType = (logoResponse.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+
+        // If the logo is an ICO (unsupported by Gemini and sharp natively), convert it to PNG using Google Favicon API
+        if (rawContentType.includes('icon') || logoUrl.toLowerCase().endsWith('.ico')) {
+          try {
+            console.log(`    [VisualOverlay] 🔄 ICO format detected. Fetching PNG equivalent via Favicon API...`);
+            const urlObj = new URL(logoUrl);
+            const domain = urlObj.hostname;
+            const googleFaviconUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=256`;
+            
+            logoResponse = await axios.get(googleFaviconUrl, { responseType: 'arraybuffer', timeout: 10000 });
+            rawBuffer = Buffer.from(logoResponse.data);
+            rawContentType = (logoResponse.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+            console.log(`    [VisualOverlay] ✅ Successfully converted ICO to ${rawContentType}`);
+          } catch (e) {
+            console.warn(`    [VisualOverlay] ⚠️ Failed to fetch PNG equivalent for ICO: ${e.message}`);
+          }
+        }
 
         if (rawBuffer.byteLength >= 100) {
+          // Strategy 1: sharp direct conversion → always outputs PNG (Gemini-supported)
           try {
-            // Convert any logo format (SVG, ICO, WEBP, etc.) to a standard PNG 
-            // format so that it is always accepted by the Gemini model.
             const pngBuffer = await sharp(rawBuffer).png().toBuffer();
             logoBase64 = pngBuffer.toString('base64');
             logoMime = 'image/png';
-            console.log(`    [VisualOverlay] 🖼  Logo converted to PNG: ${pngBuffer.byteLength} bytes`);
-          } catch (sharpError) {
-             console.warn(`    [VisualOverlay] ⚠️  Logo format conversion failed (${sharpError.message}). Skipping logo, applying text-only overlay.`);
+            console.log(`    [VisualOverlay] 🖼  Logo converted to PNG via sharp: ${pngBuffer.byteLength} bytes`);
+          } catch (sharpErr) {
+            // Strategy 2: sharp with failOn:none — handles partially corrupt files
+            try {
+              const pngBuffer = await sharp(rawBuffer, { failOn: 'none' })
+                .resize({ width: 400, withoutEnlargement: true })
+                .png()
+                .toBuffer();
+              logoBase64 = pngBuffer.toString('base64');
+              logoMime = 'image/png';
+              console.log(`    [VisualOverlay] 🖼  Logo converted via resize fallback: ${pngBuffer.byteLength} bytes`);
+            } catch (resizeErr) {
+              // Strategy 3: Only send raw if Gemini natively supports the format
+              if (GEMINI_SUPPORTED_MIMES.includes(rawContentType)) {
+                logoBase64 = rawBuffer.toString('base64');
+                logoMime = rawContentType;
+                console.log(`    [VisualOverlay] 🖼  Logo sent as raw ${rawContentType}: ${rawBuffer.byteLength} bytes`);
+              } else {
+                // ICO, BMP, SVG, TIFF etc — Gemini rejects these, skip logo entirely
+                console.warn(`    [VisualOverlay] ⚠️  Logo format "${rawContentType}" is not supported by Gemini — skipping logo, text overlay will still apply.`);
+              }
+            }
           }
         } else {
           console.warn('    [VisualOverlay] ⚠️  Logo downloaded but appears empty — skipping logo.');
@@ -609,6 +652,8 @@ const applyVisualOverlays = async (imageUrl, logoUrl, headingText, subheadingTex
         console.warn(`    [VisualOverlay] ⚠️  Logo download failed (${e.message}), continuing with text only.`);
       }
     }
+
+
 
 
     // 3. Use Gemini Flash image editing to composite
@@ -668,16 +713,32 @@ ${logoBase64 ? '6' : '3'}. Choose a contrasting color (e.g., white text on dark 
     else if (aspectRatio === '4:5')   geminiRatio = '4:5';
     else if (aspectRatio === '1:1')   geminiRatio = '1:1';
 
-    const response = await client.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: [{ role: 'user', parts }],
-      config: { 
-        responseModalities: [Modality.TEXT, Modality.IMAGE],
-        imageConfig: {
-          aspectRatio: geminiRatio
+    let response;
+    let retryCount = 0;
+    const maxRetries = 3;
+    while (true) {
+      try {
+        response = await client.models.generateContent({
+          model: 'gemini-3.1-flash-image-preview',
+          contents: [{ role: 'user', parts }],
+          config: { 
+            responseModalities: [Modality.TEXT, Modality.IMAGE],
+            imageConfig: { aspectRatio: geminiRatio }
+          }
+        });
+        break;
+      } catch (err) {
+        const isQuotaError = err.status === 429 || err.message?.includes('429') || err.message?.includes('RESOURCE_EXHAUSTED') || err.message?.includes('quota');
+        if (retryCount < maxRetries && isQuotaError) {
+          retryCount++;
+          console.warn(`    [VisualOverlay] ⚠️  Quota hit (429). Retrying ${retryCount}/${maxRetries} after ${retryCount * 4}s...`);
+          await new Promise(r => setTimeout(r, retryCount * 4000));
+        } else {
+          throw err;
         }
       }
-    });
+    }
+
 
     // 4. Extract the resulting image bytes
     let resultBase64 = null;
@@ -729,7 +790,7 @@ ${logoBase64 ? '6' : '3'}. Choose a contrasting color (e.g., white text on dark 
  * Step 4   │ MongoDB  → GeneratedAsset + Job update
  * Step 5   │ Calendar → Entry status marked "generated"
  */
-export const generateVisualPostForEntry = async (workspaceId, entryId, jobId, modelId = 'imagen-3.0-generate-001', postFormat = 'single', aspectRatio = '1:1') => {
+export const generateVisualPostForEntry = async (workspaceId, entryId, jobId, modelId = 'imagen-3.0-generate-001', postFormat = 'single', aspectRatio = '1:1', carouselCount = 3) => {
   const pipelineStart = Date.now();
 
   console.log('\n' + '═'.repeat(60));
@@ -787,13 +848,32 @@ export const generateVisualPostForEntry = async (workspaceId, entryId, jobId, mo
   console.log(`\n[Step 1/5] 🧠 GPT-4 Prompt Engineering (format: ${postFormat})...`);
   const promptStart = Date.now();
 
-  // Format-aware prompt — carousel needs 5 separate slide descriptions
   const isCarousel = postFormat === 'carousel';
+
+  let slideStructure = '';
+  if (isCarousel) {
+    slideStructure = '- Slide 1: Bold, attention-grabbing opening visual representing the hook\n';
+    if (carouselCount === 2) {
+      slideStructure += '- Slide 2: CTA-driven closing — inspiring action with brand energy';
+    } else if (carouselCount === 3) {
+      slideStructure += '- Slide 2: Solution / product in context — aspirational lifestyle\n';
+      slideStructure += '- Slide 3: CTA-driven closing — inspiring action with brand energy';
+    } else if (carouselCount === 4) {
+      slideStructure += '- Slide 2: Problem visualization — what challenge the audience faces\n';
+      slideStructure += '- Slide 3: Solution / product in context — aspirational lifestyle\n';
+      slideStructure += '- Slide 4: CTA-driven closing — inspiring action with brand energy';
+    } else {
+      slideStructure += '- Slide 2: Problem visualization — what challenge the audience faces\n';
+      slideStructure += '- Slide 3: Solution / product in context — aspirational lifestyle\n';
+      slideStructure += '- Slide 4: Key benefit or proof point — data, result, transformation\n';
+      slideStructure += '- Slide 5: CTA-driven closing — inspiring action with brand energy';
+    }
+  }
 
   const promptEngineeringRequest = isCarousel
     ? `You are an expert AI Image Prompt Engineer for social media advertising.
 
-Generate 5 separate, distinct Imagen 3 image generation prompts for a CAROUSEL post.
+Generate ${carouselCount} separate, distinct Imagen 3 image generation prompts for a CAROUSEL post.
 Each slide must be visually different but tell a cohesive brand story.
 
 BRAND: ${companyName}
@@ -807,11 +887,7 @@ BRAND COLORS: ${brandColors}
 TARGET AUDIENCE: ${targetEthnicity}
 
 Slide structure:
-- Slide 1: Bold, attention-grabbing opening visual representing the hook
-- Slide 2: Problem visualization — what challenge the audience faces
-- Slide 3: Solution / product in context — aspirational lifestyle
-- Slide 4: Key benefit or proof point — data, result, transformation
-- Slide 5: CTA-driven closing — inspiring action with brand energy
+${slideStructure}
 
 Requirements for each prompt:
 - Photorealistic, studio-grade, high-quality
@@ -820,7 +896,7 @@ Requirements for each prompt:
 - NO text or logos in any image
 - Distinct subject / scene per slide
 
-Output ONLY 5 numbered prompts (1. 2. 3. 4. 5.), nothing else. No JSON, no explanation.`
+Output ONLY ${carouselCount} numbered prompts (1. 2. 3. ...), nothing else. No JSON, no explanation.`
     : `You are an expert AI Image Prompt Engineer for social media advertising.
 
 Generate a detailed, photorealistic Imagen 3 image generation prompt for the following social media post:
@@ -864,16 +940,16 @@ Output ONLY the raw Imagen prompt text, nothing else. No JSON, no explanation.`;
   let carouselSlides = [];
 
   if (isCarousel) {
-    console.log(`    📑 Carousel mode — Parsing 5 slide prompts...`);
+    console.log(`    📑 Carousel mode — Parsing ${carouselCount} slide prompts...`);
     // Split by markers like "1. ", "2. ", or simply double newlines if markers aren't perfectly followed
     const slideMatches = trimmedPrompt.split(/\n?\d+\.\s*/).filter(s => s.trim().length > 10);
     
-    // Take exactly 5 or whatever we have
-    const slidePrompts = slideMatches.slice(0, 5);
-    if (slidePrompts.length < 5) {
-       console.warn(`    ⚠️  Only parsed ${slidePrompts.length}/5 slides. Attempting line-split fallback.`);
+    // Take exactly carouselCount or whatever we have
+    const slidePrompts = slideMatches.slice(0, carouselCount);
+    if (slidePrompts.length < carouselCount) {
+       console.warn(`    ⚠️  Only parsed ${slidePrompts.length}/${carouselCount} slides. Attempting line-split fallback.`);
        // Minimal fallback if the numbering was weird
-       const fallback = trimmedPrompt.split('\n').filter(l => l.trim().length > 30).slice(0, 5);
+       const fallback = trimmedPrompt.split('\n').filter(l => l.trim().length > 30).slice(0, carouselCount);
        if (fallback.length > slidePrompts.length) carouselSlides = fallback;
        else carouselSlides = slidePrompts;
     } else {
@@ -896,34 +972,66 @@ Output ONLY the raw Imagen prompt text, nothing else. No JSON, no explanation.`;
   let generatedSlides = [];
 
   let slideTexts = [];
+
+  // --- Smart local fallback: always generates unique headings per slide ---
+  const SLIDE_FRAMES = [
+    { role: 'Hook',     prefix: '',         suffix: '' },
+    { role: 'Problem',  prefix: 'The Real Problem: ', suffix: '' },
+    { role: 'Solution', prefix: 'The Fix: ',          suffix: '' },
+    { role: 'Proof',    prefix: 'Why It Works: ',     suffix: '' },
+    { role: 'CTA',      prefix: '',                   suffix: ' — Act Now' },
+  ];
+  const buildLocalVariations = (count) => {
+    return Array.from({ length: count }, (_, i) => {
+      const frame = SLIDE_FRAMES[i % SLIDE_FRAMES.length];
+      return {
+        heading: `${frame.prefix}${title}${frame.suffix}`.trim(),
+        subheading: i === 0 ? hook : (hook ? hook.split(' ').reverse().join(' ').substring(0, 60) : `Part ${i + 1} of ${count}`)
+      };
+    });
+  };
+
   if (isCarousel && carouselSlides.length > 0) {
     console.log(`    ⚡ Staggered Rendering ${carouselSlides.length} slides (1.2s apart to manage quota)...`);
-    
-    // Generate text variations
-    const variationsPrompt = `You are a social media copywriter.
-Generate ${carouselSlides.length} progressive variations of the following heading and subheading for a carousel post sequence.
-Original Heading: ${title}
-Original Subheading: ${hook}
 
-The slides should flow logically (e.g., Hook -> Problem -> Solution -> Proof -> CTA).
-Output strictly a JSON array of ${carouselSlides.length} objects. Each object must have "heading" and "subheading" string properties. Make them punchy and short suitable for image overlay.`;
+    // Generate unique text variations per slide via Vertex AI
+    const variationsPrompt = `You are a professional social media copywriter creating a ${carouselCount}-slide carousel post.
+
+Original Heading: ${title}
+Original Hook/Subheading: ${hook || 'N/A'}
+
+Generate ${carouselCount} UNIQUE and DISTINCT text overlays for each slide. The slides must flow as a logical story:
+${slideStructure}
+(Adjust the flow if fewer slides)
+
+Rules:
+- Each "heading" must be DIFFERENT from the others — no repetition
+- Keep headings under 8 words — punchy, bold, suitable for image overlay
+- Keep subheadings under 15 words
+
+Output ONLY a raw JSON array (no markdown, no explanation) like this:
+[
+  { "heading": "...", "subheading": "..." },
+  { "heading": "...", "subheading": "..." }
+]`;
 
     try {
-      console.log(`    🧠 Generating text variations for ${carouselSlides.length} slides...`);
-      const varsRes = await AskOpenAIRaw(variationsPrompt, null, { jsonMode: true, systemInstruction: "Output ONLY a valid JSON array. No conversational text." });
+      console.log(`    🧠 Generating unique text variations for ${carouselSlides.length} slides via Vertex AI...`);
+      const varsRes = await AskVertexRaw(variationsPrompt, { temperature: 0.85 });
       let parsed = safeParse(varsRes);
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        // Find the first array property if wrapped in an object
         for (const key in parsed) {
-          if (Array.isArray(parsed[key])) {
-            parsed = parsed[key];
-            break;
-          }
+          if (Array.isArray(parsed[key])) { parsed = parsed[key]; break; }
         }
       }
-      slideTexts = Array.isArray(parsed) ? parsed : [];
+      slideTexts = Array.isArray(parsed) && parsed.length >= carouselSlides.length
+        ? parsed
+        : buildLocalVariations(carouselSlides.length);
+      console.log(`    ✅ Slide text variations ready (${slideTexts.length} slides):`);
+      slideTexts.forEach((s, i) => console.log(`       Slide ${i+1}: "${s.heading}" / "${s.subheading}"`) );
     } catch(e) {
-      console.error(`    ⚠️ Failed to generate slide text variations: ${e.message}`);
+      console.warn(`    ⚠️ Vertex variation call failed (${e.message}) — using smart local fallback.`);
+      slideTexts = buildLocalVariations(carouselSlides.length);
     }
 
     // Stagger calls 1.2s apart to avoid hitting Imagen's concurrent quota limit
@@ -938,6 +1046,9 @@ Output strictly a JSON array of ${carouselSlides.length} objects. Each object mu
           const slideSubheading = slideTexts[i]?.subheading || hook;
           const brandedSlideUrl = await applyVisualOverlays(rawSlideUrl, brand.logoUrl, slideHeading, slideSubheading, aspectRatio);
           generatedSlides.push(brandedSlideUrl);
+          
+          // --- UPDATE JOB PROGRESS FOR FRONTEND POLL ---
+          await GenerationJob.findByIdAndUpdate(jobId, { completedCount: i + 1 }).catch(() => {});
         } else {
           console.warn(`       ⚠️  Slide ${i+1} returned empty URL`);
         }

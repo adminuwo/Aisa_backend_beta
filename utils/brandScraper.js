@@ -177,9 +177,7 @@ const extractColorsFromLogo = async (logoUrl) => {
 
     if (palette.Vibrant) addUnique(palette.Vibrant.hex);
     if (palette.DarkVibrant) addUnique(palette.DarkVibrant.hex);
-    if (palette.Muted) addUnique(palette.Muted.hex);
-    if (palette.LightVibrant) addUnique(palette.LightVibrant.hex);
-
+    // Excluded Muted and LightVibrant to reduce hallucinated/noise colors from logos
     return colors.filter(Boolean);
   } catch (e) {
     console.warn('[Vibrant] color extraction failed:', e.message);
@@ -519,7 +517,7 @@ export const extractBrandMetadata = async (targetUrl) => {
     return true;
   }).slice(0, 5);
 
-  if (brandColors.length === 0) brandColors = ['#4f46e5', '#6366f1', '#0ea5e9'];
+  // No hardcoded fallback here. If empty, the AI enrichment step will suggest colors.
 
   // 5. Crawl site for richer text context
   const siteContext = await crawlBrandContext(url, html);
