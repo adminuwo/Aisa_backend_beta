@@ -106,13 +106,22 @@ export const extractColorsFromLogo = async (buffer) => {
  * 3. PDF/DOCX Parsing
  */
 export const parseBrandDocument = async (buffer, mimeType) => {
+  const parseStart = Date.now();
   try {
-    if (!buffer) return '';
+    if (!buffer) {
+      console.warn('[DocParser] ⚠️  No buffer provided — skipping.');
+      return '';
+    }
+
+    console.log(`[DocParser] 📄 Parsing document | MIME: ${mimeType} | Buffer: ${buffer.length} bytes`);
 
     // Specialized PDF handle
     if (mimeType.includes('pdf')) {
+      console.log('[DocParser] 🔍 Detected PDF format — using pdf-parse...');
       const data = await pdfParse(buffer);
-      return data.text || '';
+      const text = data.text || '';
+      console.log(`[DocParser] ✅ PDF parsed successfully | Pages: ${data.numpages || 'N/A'} | Chars extracted: ${text.length} | Time: ${Date.now() - parseStart}ms`);
+      return text;
     }
 
     // Others (Docx, etc)
@@ -122,11 +131,16 @@ export const parseBrandDocument = async (buffer, mimeType) => {
       mimeType.includes('text/plain') ||
       mimeType.includes('application/msword')
     ) {
-      return await officeparser.parseOfficeAsync(buffer);
+      console.log(`[DocParser] 🔍 Detected Office/Word format — using officeparser...`);
+      const text = await officeparser.parseOfficeAsync(buffer);
+      console.log(`[DocParser] ✅ Office doc parsed | Chars extracted: ${text?.length || 0} | Time: ${Date.now() - parseStart}ms`);
+      return text;
     }
+
+    console.warn(`[DocParser] ⚠️  Unsupported MIME type "${mimeType}" — no text extracted.`);
     return '';
   } catch (error) {
-    logger.error(`[Document Parser] Parsing failed for ${mimeType}: ${error.message}`);
+    logger.error(`[DocParser] ❌ Parsing failed for ${mimeType}: ${error.message}`);
     return '';
   }
 };
@@ -166,12 +180,22 @@ export const processBrandIdentity = async ({
     console.log(`[Stage 1] Triggering parallel insights extraction...`);
 
     const pdfBuffers = Array.isArray(pdfBuffer) ? pdfBuffer : (pdfBuffer ? [pdfBuffer] : []);
-    
+
+    console.log('\n' + '─'.repeat(50));
+    console.log(`[Stage 1] 📂 Document Pipeline`);
+    console.log(`[Stage 1]    Docs to parse : ${pdfBuffers.length}`);
+    console.log(`[Stage 1]    Website URL   : ${websiteUrl || 'None'}`);
+    console.log(`[Stage 1]    Manual notes  : ${manualDescription ? manualDescription.length + ' chars' : 'None'}`);
+    console.log('─'.repeat(50));
+
     const [docTexts, advancedWebData] = await Promise.all([
-      pdfBuffers.length > 0 
-        ? Promise.all(pdfBuffers.map(buf => parseBrandDocument(buf, pdfMimeType || 'application/pdf')))
+      pdfBuffers.length > 0
+        ? Promise.all(pdfBuffers.map((buf, idx) => {
+            console.log(`[Stage 1] 📄 Parsing doc ${idx + 1}/${pdfBuffers.length} (${buf.length} bytes)...`);
+            return parseBrandDocument(buf, pdfMimeType || 'application/pdf');
+          }))
         : Promise.resolve([]),
-      websiteUrl ? extractBrandMetadata(websiteUrl) : Promise.resolve(null)
+      websiteUrl ? (console.log(`[Stage 1] 🌐 Fetching web metadata for: ${websiteUrl}`), extractBrandMetadata(websiteUrl)) : Promise.resolve(null)
     ]);
 
     // Handle Logo Color Extraction (Uploaded OR Discovered)
@@ -193,7 +217,15 @@ export const processBrandIdentity = async ({
     
     const docText = docTexts.filter(Boolean).join('\n---\n');
     const logoColors = finalColors;
-    console.log(`[Stage 1] Parallel insights extraction complete. Docs: ${docTexts.length} | Colors: ${logoColors.length}`);
+
+    console.log(`\n[Stage 1] 📊 Parsing Summary:`);
+    docTexts.forEach((t, i) => {
+      console.log(`[Stage 1]    Doc ${i + 1}: ${t ? t.length + ' chars extracted' : '⚠️  Empty / unreadable'}`);
+    });
+    console.log(`[Stage 1]    Combined doc text  : ${docText.length} chars`);
+    console.log(`[Stage 1]    Web data fetched   : ${advancedWebData ? 'Yes — ' + (advancedWebData.brandName || 'name unknown') : 'No'}`);
+    console.log(`[Stage 1]    Brand colors found : ${logoColors.length}`);
+    console.log('─'.repeat(50));
 
     const webData = advancedWebData; // Unified source
 
