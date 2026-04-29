@@ -54,7 +54,7 @@ export const getToolCost = (toolName, body = {}) => {
         convert_audio: 90, 
         document_convert: 3, 
         legal_toolkit: 50, 
-        aicashflow_tab: 5
+        ai_cashflow: 5
     };
 
     const featureCosts = { ...defaults, ...featureCostCache };
@@ -110,7 +110,7 @@ const getToolLabel = (toolName) => {
         case 'code_writer': return 'AISA Code Writer';
         case 'convert_document': return 'AISA Document Analysis';
         case 'legal_toolkit': return 'AISA AI Legal';
-        case 'aicashflow_tab': return 'AISA CashFlow Explorer (Tab Access)';
+        case 'ai_cashflow': return 'AISA CashFlow Explorer';
         case 'ai_ads_agent': return 'AI Ads Agent (Visual Post)';
         case 'gemini_flash': return 'AI Ads Agent (Website Scrapping)';
         case 'activate_strategy': return 'AI Ads Agent (30-Day Strategy)';

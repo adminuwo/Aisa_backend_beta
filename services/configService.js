@@ -484,32 +484,53 @@ DO NOT include any prefix. Keep it under 80 words for maximum impact.`,
             configCache.set(config.key, existing.value);
         }
 
-        // --- Seed FeatureCredit Configs ---
+        // --- Synchronize FeatureCredit Configs ---
         try {
             const { default: FeatureCredit } = await import('../models/FeatureCredit.js');
-            const featureCount = await FeatureCredit.countDocuments();
-            if (featureCount === 0) {
-                logger.info(`[ConfigService] Seeding initial FeatureCredits into database.`);
-                const initialFeatureCredits = [
-                    { featureKey: 'chat', uiLabel: 'Standard Chat (Text)', cost: 2, category: 'Core' },
-                    { featureKey: 'web_search', uiLabel: 'Web Search Mode', cost: 60, category: 'Magic Tool' },
-                    { featureKey: 'deep_search', uiLabel: 'Deep Search Mode', cost: 85, category: 'Magic Tool' },
-                    { featureKey: 'agent_chat', uiLabel: 'Agent Database Chat', cost: 60, category: 'Core' },
-                    { featureKey: 'realtime_chat', uiLabel: 'Realtime Voice Chat', cost: 60, category: 'Core' },
-                    { featureKey: 'knowledge_base', uiLabel: 'Knowledge Base Upload/Query', cost: 3, category: 'Core' },
-                    { featureKey: 'generate_image', uiLabel: 'Generate Image (Standard)', cost: 66, category: 'Media Generation' },
-                    { featureKey: 'generate_image_hd', uiLabel: 'Generate Image (HD)', cost: 100, category: 'Media Generation' },
-                    { featureKey: 'generate_image_ultra', uiLabel: 'Generate Image (Ultra)', cost: 135, category: 'Media Generation' },
-                    { featureKey: 'edit_image', uiLabel: 'Edit Image (Magic)', cost: 66, category: 'Media Generation' },
-                    { featureKey: 'video_veo_fast_def', uiLabel: 'Video Gen (Veo Fast 1080p)', cost: 250, category: 'Media Generation' },
-                    { featureKey: 'video_veo_fast_4k', uiLabel: 'Video Gen (Veo Fast 4k)', cost: 585, category: 'Media Generation' },
-                    { featureKey: 'video_veo_pro_def', uiLabel: 'Video Gen (Veo Pro 1080p)', cost: 333, category: 'Media Generation' },
-                    { featureKey: 'video_veo_pro_4k', uiLabel: 'Video Gen (Veo Pro 4k)', cost: 666, category: 'Media Generation' },
-                    { featureKey: 'code_writer', uiLabel: 'Code Writer Mode', cost: 3, category: 'Magic Tool' },
-                    { featureKey: 'convert_audio', uiLabel: 'File/Text to Audio', cost: 90, category: 'Magic Tool' },
-                    { featureKey: 'document_convert', uiLabel: 'File Conversion Mode', cost: 3, category: 'Magic Tool' }
-                ];
-                await FeatureCredit.insertMany(initialFeatureCredits);
+            const targetFeatureCredits = [
+                { featureKey: 'chat', uiLabel: 'Standard Chat (Text)', cost: 2, category: 'Core' },
+                { featureKey: 'web_search', uiLabel: 'Web Search Mode', cost: 60, category: 'Magic Tool' },
+                { featureKey: 'deep_search', uiLabel: 'Deep Search Mode', cost: 85, category: 'Magic Tool' },
+                { featureKey: 'agent_chat', uiLabel: 'Agent Database Chat', cost: 60, category: 'Core' },
+                { featureKey: 'realtime_chat', uiLabel: 'Realtime Voice Chat', cost: 60, category: 'Core' },
+                { featureKey: 'knowledge_base', uiLabel: 'Knowledge Base Upload/Query', cost: 3, category: 'Core' },
+                { featureKey: 'generate_image', uiLabel: 'Generate Image (Standard)', cost: 66, category: 'Media Generation' },
+                { featureKey: 'generate_image_hd', uiLabel: 'Generate Image (HD)', cost: 100, category: 'Media Generation' },
+                { featureKey: 'generate_image_ultra', uiLabel: 'Generate Image (Ultra)', cost: 135, category: 'Media Generation' },
+                { featureKey: 'edit_image', uiLabel: 'Edit Image (Magic)', cost: 66, category: 'Media Generation' },
+                { featureKey: 'video_veo_fast_def', uiLabel: 'Video Gen (Veo Fast 1080p)', cost: 250, category: 'Media Generation' },
+                { featureKey: 'video_veo_fast_4k', uiLabel: 'Video Gen (Veo Fast 4k)', cost: 585, category: 'Media Generation' },
+                { featureKey: 'video_veo_pro_def', uiLabel: 'Video Gen (Veo Pro 1080p)', cost: 333, category: 'Media Generation' },
+                { featureKey: 'video_veo_pro_4k', uiLabel: 'Video Gen (Veo Pro 4k)', cost: 666, category: 'Media Generation' },
+                { featureKey: 'code_writer', uiLabel: 'Code Writer Mode', cost: 3, category: 'Magic Tool' },
+                { featureKey: 'convert_audio', uiLabel: 'File/Text to Audio', cost: 90, category: 'Magic Tool' },
+                { featureKey: 'document_convert', uiLabel: 'File Conversion Mode', cost: 3, category: 'Magic Tool' },
+                // --- NEW: AISA Advance Features ---
+                { featureKey: 'ai_legal', uiLabel: 'AI Legal™', cost: 50, category: 'AISA Advance Feature' },
+                { featureKey: 'ai_cashflow', uiLabel: 'AI Cashflow™', cost: 100, category: 'AISA Advance Feature' },
+                { featureKey: 'ai_ads_agent', uiLabel: 'AI ADS™ Visuals', cost: 85, category: 'AISA Advance Feature' },
+                { featureKey: 'gemini_flash', uiLabel: 'AI ADS™ Brand Scraper', cost: 19, category: 'AISA Advance Feature' },
+                { featureKey: 'activate_strategy', uiLabel: 'AI ADS™ Strategy Builder (Daily/30d)', cost: 60, category: 'AISA Advance Feature' },
+                { featureKey: 'generate_content', uiLabel: 'AI ADS™ Content Gen', cost: 5, category: 'AISA Advance Feature' },
+                { featureKey: 'regenerate_content', uiLabel: 'AI ADS™ Content Refresh', cost: 2, category: 'AISA Advance Feature' },
+                // --- Strategy Frequency Tiers (Dynamic Pricing) ---
+                { featureKey: 'strategy_7days', uiLabel: 'AI ADS™ Strategy — 7 Days (Starter)', cost: 14, category: 'AISA Advance Feature' },
+                { featureKey: 'strategy_1x_week', uiLabel: 'AI ADS™ Strategy — 1x per Week', cost: 15, category: 'AISA Advance Feature' },
+                { featureKey: 'strategy_3x_week', uiLabel: 'AI ADS™ Strategy — 3x per Week', cost: 30, category: 'AISA Advance Feature' },
+                { featureKey: 'strategy_daily', uiLabel: 'AI ADS™ Strategy — Daily (30d)', cost: 60, category: 'AISA Advance Feature' },
+                { featureKey: 'strategy_2x_daily', uiLabel: 'AI ADS™ Strategy — 2x Daily (High Growth)', cost: 120, category: 'AISA Advance Feature' }
+            ];
+
+            for (const fc of targetFeatureCredits) {
+                const exists = await FeatureCredit.findOne({ featureKey: fc.featureKey });
+                if (!exists) {
+                    logger.info(`[ConfigService] Seeding missing FeatureCredit: ${fc.featureKey}`);
+                    await FeatureCredit.create(fc);
+                } else if (exists.uiLabel !== fc.uiLabel) {
+                    logger.info(`[ConfigService] Updating FeatureCredit UI Label: ${fc.featureKey}`);
+                    exists.uiLabel = fc.uiLabel;
+                    await exists.save();
+                }
             }
         } catch (fcErr) {
             logger.error(`[ConfigService] Failed to seed FeatureCredits: ${fcErr.message}`);

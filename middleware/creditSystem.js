@@ -52,7 +52,7 @@ const getActionLabel = (url, body) => {
     if (url.includes('/api/voice')) return { action: 'convert_audio', description: 'AISA Audio Magic' };
     if (url.includes('/api/knowledge/upload') || url.includes('/api/knowledge/upload-url')) return { action: 'knowledge_base', description: 'AISA Knowledge Base' };
     if (url.includes('/api/legal-toolkit')) return { action: 'legal_toolkit', description: 'AISA AI Legal' };
-    if (url.includes('/api/stock/')) return { action: 'aicashflow_tab', description: 'AISA CashFlow Explorer (Tab Access)' };
+    if (url.includes('/api/stock/')) return { action: 'ai_cashflow', description: 'AISA CashFlow Explorer (Tab Access)' };
     if (url.includes('/api/social-agent/generate/visual-post')) {
         if (body?.postFormat === 'carousel') {
             const count = Math.min(Math.max(parseInt(body?.carouselCount) || 3, 2), 4);
@@ -182,7 +182,7 @@ export const creditMiddleware = async (req, res, next) => {
 
     cost = calculatedCost;
 
-    // Override strategy cost based on selected Posting Frequency
+    // Override strategy cost based on selected Posting Frequency (reads from DB if available)
     if (action === 'activate_strategy') {
       const workspaceId = req.body?.workspaceId;
       let freq = '3x per week';
@@ -203,13 +203,20 @@ export const creditMiddleware = async (req, res, next) => {
         freq = '7 days'; // Free plan ALWAYS forced to 7 days
       }
 
-      // Cost mapped directly to the dropdown option
-      if (freq.includes('7 days')) cost = 14;         // 7 days daily
-      else if (freq.includes('1x')) cost = 15;        // 4 posts a month
-      else if (freq.includes('3x')) cost = 30;        // 12 posts a month
-      else if (freq === 'daily') cost = 60;           // 30 posts a month
-      else if (freq.includes('2x')) cost = 120;       // 60 posts a month
-      else cost = 60;                                 // Default fallback
+      // Read costs from DB (admin-configurable), fall back to hardcoded defaults
+      const getFreqCost = async (featureKey, defaultCost) => {
+        try {
+          const fc = await BrandProfile.db.model('FeatureCredit').findOne({ featureKey });
+          return fc ? fc.cost : defaultCost;
+        } catch { return defaultCost; }
+      };
+
+      if (freq.includes('7 days'))       cost = await getFreqCost('strategy_7days',    14);
+      else if (freq.includes('1x'))       cost = await getFreqCost('strategy_1x_week',  15);
+      else if (freq.includes('3x'))       cost = await getFreqCost('strategy_3x_week',  30);
+      else if (freq === 'daily')          cost = await getFreqCost('strategy_daily',     60);
+      else if (freq.includes('2x'))       cost = await getFreqCost('strategy_2x_daily', 120);
+      else                                cost = await getFreqCost('strategy_daily',     60);
 
       console.log(`[CreditSystem] Strategy generation cost set to ${cost} credits for '${freq}' frequency (Free tier: ${isFreeForCost})`);
     }
