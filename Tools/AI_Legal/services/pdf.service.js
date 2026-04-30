@@ -195,24 +195,35 @@ export const generatePrecedentPDF = async (precedentData) => {
             </html>
         `;
 
-        logger.info(`[PDFService] Launching browser for case: ${caseTitle}`);
         const isLinux = process.platform === 'linux';
+        logger.info(`[PDFService] Launching browser (Platform: ${process.platform}) for case: ${caseTitle}`);
         
+        // Robust executable path selection
+        let executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+        if (!executablePath && isLinux) {
+            executablePath = '/usr/bin/chromium';
+        }
+
         browser = await puppeteer.launch({
             headless: true,
-            executablePath: isLinux ? '/usr/bin/chromium' : undefined,
+            executablePath: executablePath,
             args: [
                 '--no-sandbox', 
                 '--disable-setuid-sandbox',
                 '--disable-dev-shm-usage',
                 '--disable-gpu',
-                ...(isLinux ? ['--no-zygote', '--single-process'] : [])
-            ]
+                '--no-zygote',
+                '--font-render-hinting=none',
+            ].filter(Boolean)
         });
 
+        logger.info(`[PDFService] Browser launched successfully. Opening page...`);
         const page = await browser.newPage();
-        await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
         
+        // Use 'load' instead of 'networkidle0' for better reliability in constrained environments
+        await page.setContent(htmlContent, { waitUntil: 'load', timeout: 30000 });
+        
+        logger.info(`[PDFService] Generating PDF buffer...`);
         const pdfBuffer = await page.pdf({
             format: 'A4',
             printBackground: true,
@@ -225,13 +236,16 @@ export const generatePrecedentPDF = async (precedentData) => {
         });
 
         await browser.close();
+        logger.info(`[PDFService] PDF generated successfully (${pdfBuffer.length} bytes)`);
         return pdfBuffer;
 
     } catch (error) {
-        if (browser) await browser.close();
+        if (browser) {
+            try { await browser.close(); } catch (e) {}
+        }
         console.error("[PDF_SERVICE_ERROR]", error);
-        logger.error(`[PDFService] Generation failed: ${error.message}`);
-        throw error;
+        logger.error(`[PDFService] Generation failed: ${error.message} - ${error.stack}`);
+        throw new Error(`PDF Generation Error: ${error.message}`);
     }
 };
 
