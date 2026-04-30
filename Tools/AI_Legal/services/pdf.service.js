@@ -196,13 +196,17 @@ export const generatePrecedentPDF = async (precedentData) => {
         `;
 
         logger.info(`[PDFService] Launching browser for case: ${caseTitle}`);
+        const isLinux = process.platform === 'linux';
+        
         browser = await puppeteer.launch({
-            headless: 'new',
+            headless: true,
+            executablePath: isLinux ? '/usr/bin/chromium' : undefined,
             args: [
                 '--no-sandbox', 
                 '--disable-setuid-sandbox',
                 '--disable-dev-shm-usage',
-                '--disable-gpu'
+                '--disable-gpu',
+                ...(isLinux ? ['--no-zygote', '--single-process'] : [])
             ]
         });
 
@@ -225,6 +229,7 @@ export const generatePrecedentPDF = async (precedentData) => {
 
     } catch (error) {
         if (browser) await browser.close();
+        console.error("[PDF_SERVICE_ERROR]", error);
         logger.error(`[PDFService] Generation failed: ${error.message}`);
         throw error;
     }
