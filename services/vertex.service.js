@@ -128,7 +128,7 @@ export const retrieveContextFromRag = async (query, topK = 8, category = 'LEGAL'
         });
 
         const Knowledge = (await import('../models/Knowledge.model.js')).default;
-        
+
         const sources = [];
         const retrievedTexts = [];
 
@@ -136,7 +136,7 @@ export const retrieveContextFromRag = async (query, topK = 8, category = 'LEGAL'
             const gcsUri = context.sourceUri;
             // Even if gcsUri is missing, still use the chunk text if present
             const doc = gcsUri ? await Knowledge.findOne({ gcsUri }) : null;
-            
+
             console.log(`[RAG DEBUG] Chunk Source: ${gcsUri || 'N/A'} | DB Doc: ${doc ? 'FOUND' : 'NOT_IN_DB'} | DB Category: ${doc?.category || 'NONE'} | Requested: ${category}`);
 
             // If doc not found in DB but we still have text, use it (don't skip)
@@ -215,7 +215,7 @@ export const retrieveContextFromRag = async (query, topK = 8, category = 'LEGAL'
 export const analyzeRAGRequirements = async (query) => {
     try {
         const needsRAG = await detectRAGNeed(query);
-        
+
         if (!needsRAG) {
             return { needsRAG: false, rewrittenQuery: query };
         }
@@ -248,18 +248,18 @@ export const detectRAGNeed = async (query) => {
         const lower = query.toLowerCase().trim();
         // Fast-path: check for common conversational fillers, greetings, and generic definitions
         const fillers = [
-            'hi', 'hello', 'thanks', 'thank you', 'okay', 'dynamic', 'great', 'awesome', 
+            'hi', 'hello', 'thanks', 'thank you', 'okay', 'dynamic', 'great', 'awesome',
             'happy to help', 'see you', 'bye', 'hope this helps', 'hope this clears things up',
             'no problem', 'you are welcome', 'got it', 'sure', 'alright', 'what is', 'define',
             'explain', 'how to', 'meaning of'
         ];
-        
+
         // If it starts with a general definition phrase and doesn't mention brand keywords
         const brandKeywords = ['uwo', 'aisa', 'ai mall', 'unified web'];
         const hasBrandKeyword = brandKeywords.some(bk => lower.includes(bk));
-        
+
         const generalPhrases = [
-            'what is', 'define', 'how to', 'meaning of', 'explain', 'tell me about', 
+            'what is', 'define', 'how to', 'meaning of', 'explain', 'tell me about',
             'suggest', 'why is', 'who is', 'give me', 'describe', 'difference between',
             'how does', 'why does', 'what are', 'where is'
         ];
@@ -272,15 +272,14 @@ export const detectRAGNeed = async (query) => {
 
         const detectorTemplate = configService.getConfig('RAG_DETECTOR_PROMPT', 'Needs RAG? {query}');
         const detectorPrompt = detectorTemplate.replace('{query}', query);
-
-        const result = await AskVertexRaw(detectorPrompt, { 
+        const result = await AskVertexRaw(detectorPrompt, {
             modelOverride: 'gemini-2.5-flash',
             maxOutputTokens: 10,
-            temperature: 0.1 
+            temperature: 0.1
         });
         const decision = result.trim().toUpperCase();
         logger.info(`[RAG-Detector] AI Decision for "${query}": ${decision}`);
-        
+
         // Check if decision starts with YES or is just YES
         return decision === 'YES' || decision.startsWith('YES\n') || decision.startsWith('YES ');
     } catch (error) {
@@ -319,7 +318,7 @@ export const AskVertexRaw = async (prompt, options = {}) => {
                     temperature: options.temperature || 0.7,
                     ...(options.isJson && { responseMimeType: "application/json" })
                 },
-                tools: options.useSearch ? [{ googleSearchRetrieval: {} }] : []
+                tools: options.useSearch ? [{ googleSearch: {} }] : []
             });
         } else if (genAIInstance) {
             // Use Gemini API (API key mode)
@@ -330,7 +329,7 @@ export const AskVertexRaw = async (prompt, options = {}) => {
                     temperature: options.temperature || 0.7,
                     ...(options.isJson && { responseMimeType: "application/json" })
                 },
-                tools: options.useSearch ? [{ googleSearchRetrieval: {} }] : []
+                tools: options.useSearch ? [{ googleSearch: {} }] : []
             });
         } else {
             throw new Error('AI model instance not available');
@@ -342,12 +341,12 @@ export const AskVertexRaw = async (prompt, options = {}) => {
                 contents: [{ role: 'user', parts: [{ text: prompt }] }]
             });
         } catch (execErr) {
-            if ((execErr.message.includes("404") || execErr.message.includes("NOT_FOUND")) && selectedModelName !== 'gemini-2.5-flash') {
+            if (execErr.message.includes("404") || execErr.message.includes("NOT_FOUND")) {
                 logger.warn(`[AskVertexRaw] Execution failed for ${selectedModelName}. Retrying with gemini-2.5-flash.`);
                 const fallbackModel = genAIInstance.getGenerativeModel({
                     model: 'gemini-2.5-flash',
-                    generationConfig: { 
-                        maxOutputTokens: options.maxOutputTokens || 4096, 
+                    generationConfig: {
+                        maxOutputTokens: options.maxOutputTokens || 4096,
                         temperature: options.temperature || 0.7,
                         ...(options.isJson && { responseMimeType: "application/json" })
                     }
@@ -363,7 +362,7 @@ export const AskVertexRaw = async (prompt, options = {}) => {
         // Handle both @google-cloud/vertexai and @google/generative-ai response formats
         const response = result.response || result;
         const candidate = response.candidates?.[0];
-        
+
         let text = '';
         if (typeof response.text === 'function') {
             text = response.text();
@@ -377,12 +376,12 @@ export const AskVertexRaw = async (prompt, options = {}) => {
         let sources = [];
         if (options.useSearch && candidate?.groundingMetadata) {
             const gm = candidate.groundingMetadata;
-            
+
             // Format sources from grounded snippets or search entries
             if (gm.searchEntryPoint?.htmlContent) {
                 // This is a special part of the response that contains the search UI HTML if requested
             }
-            
+
             if (gm.groundingChunks || gm.searchEntryMetadata) {
                 // Vertex AI usually provides groundingChunks with detailed citations
                 const chunks = gm.groundingChunks || [];
@@ -413,7 +412,7 @@ export const AskVertexRaw = async (prompt, options = {}) => {
             // Do NOT fallback to gemini-1.5-pro — not available in asia-south1
             throw err;
         }
-        
+
         throw err;
     }
 };
@@ -465,7 +464,7 @@ export const askVertex = async (prompt, context = null, options = {}) => {
                     responseMimeType: (systemInstruction && (systemInstruction.includes("JSON") || options.isJson)) ? "application/json" : "text/plain"
                 },
                 systemInstruction: systemInstruction,
-                tools: options.useSearch ? [{ googleSearchRetrieval: {} }] : []
+                tools: options.useSearch ? [{ googleSearch: {} }] : []
             });
         }
 
@@ -554,7 +553,7 @@ export const askVertex = async (prompt, context = null, options = {}) => {
         }
 
         logger.info(`[VERTEX] Response received successfully (${text.length} chars).`);
-        
+
         if (options.returnSources) {
             return { text, sources };
         }
@@ -563,7 +562,7 @@ export const askVertex = async (prompt, context = null, options = {}) => {
     } catch (error) {
         logger.error(`[VERTEX] Error: ${error.message}`);
         if (error.stack) logger.debug(`[VERTEX] Stack: ${error.stack}`);
-        
+
         // Specific error for model not found 
         if ((error.message.includes("404") || error.message.includes("NOT_FOUND")) && !options.isFallback) {
             logger.warn(`[VERTEX] Model ${modelName} NOT_FOUND in asia-south1. Check model availability.`);
@@ -643,18 +642,18 @@ export const deleteFromVertexRag = async (gcsUri, originalName) => {
 
         // 1. List files to find the one matching GCS URI
         const listUrl = `https://${location}-aiplatform.googleapis.com/v1beta1/projects/${projectId}/locations/${location}/ragCorpora/${corpusId}/ragFiles`;
-        
+
         const res = await axios.get(listUrl, {
             headers: { Authorization: `Bearer ${token.token}` }
         });
 
         const files = res.data.ragFiles || [];
         const gcsFileName = gcsUri.split('/').pop();
-        
+
         // Find by source URI or display name
-        const fileToDelete = files.find(f => 
-            f.ragFileConfig?.gcsSource?.uris?.includes(gcsUri) || 
-            f.displayName === gcsFileName || 
+        const fileToDelete = files.find(f =>
+            f.ragFileConfig?.gcsSource?.uris?.includes(gcsUri) ||
+            f.displayName === gcsFileName ||
             f.displayName === originalName
         );
 

@@ -12,7 +12,7 @@ import { safeParseLLMJson } from '../../../utils/jsonUtils.js';
 export const findPrecedents = async (userQuery, caseContext = null, language = 'English') => {
     const isManualMode = !!userQuery;
     const modeLabel = isManualMode ? "Manual Search Mode" : "Using Current Case";
-    
+
     logger.info(`[Precedents] Mode: ${modeLabel}`);
 
     let searchQuery = userQuery;
@@ -28,7 +28,7 @@ export const findPrecedents = async (userQuery, caseContext = null, language = '
     // 1. Retrieve Candidate Cases
     // Try Internal DB first
     let candidates = await searchInternalDB(searchQuery);
-    
+
     // If not enough internal results, fetch from Web Search
     if (candidates.length < 5) {
         const externalResults = await searchExternal(searchQuery);
@@ -65,7 +65,7 @@ const searchInternalDB = async (query) => {
             { $text: { $search: query } },
             { score: { $meta: "textScore" } }
         ).sort({ score: { $meta: "textScore" } }).limit(10);
-        
+
         return cases.map(c => ({
             ...c.toObject(),
             source: 'Internal'
@@ -80,7 +80,7 @@ const searchExternal = async (query) => {
     try {
         logger.info(`[Precedents] Searching external for: ${query}`);
         const result = await performSearch(`Find top 5 landmark legal judgements, case laws, and precedents related to: "${query}". Focus on Supreme Court and High Court cases with complete citations (AIR, SCC, etc.) and brief reasoning.`, 'English');
-        
+
         if (!result || !result.summary) return [];
 
         // Parse external summary into structured candidate objects
@@ -110,11 +110,11 @@ const searchExternal = async (query) => {
 const rankPrecedents = (precedents, query, context) => {
     // Basic ranking: Internal sources get a boost, then keyword overlap
     const queryTerms = query.toLowerCase().split(' ');
-    
+
     return precedents.map(p => {
         let score = 0;
         const pText = `${p.case_name} ${p.text} ${p.tags ? p.tags.join(' ') : ''}`.toLowerCase();
-        
+
         // Keyword overlap
         queryTerms.forEach(term => {
             if (pText.includes(term)) score += 10;
@@ -132,7 +132,7 @@ const rankPrecedents = (precedents, query, context) => {
 
 const processPrecedentWithAI = async (caseData, context = null, language = 'English') => {
     const isHindi = language === 'Hindi' || language === 'hi';
-    const langRule = isHindi 
+    const langRule = isHindi
         ? "\n\n### MANDATORY LANGUAGE RULE:\n- Generate ALL text in HINDI.\n- Use 'Simple Hindi + English term in brackets' for all legal concepts (e.g. 'अनुबंध (Contract)', 'शपथ पत्र (Affidavit)').\n- Maintain professional legal tone."
         : `\n\n### MANDATORY LANGUAGE RULE:\n- Respond entirely in ${language}.`;
 
@@ -219,7 +219,7 @@ const processPrecedentWithAI = async (caseData, context = null, language = 'Engl
  */
 export const analyzePrecedent = async (actionType, precedentData, activeCaseData = null, language = 'English') => {
     const isHindi = language === 'Hindi' || language === 'hi';
-    const langRule = isHindi 
+    const langRule = isHindi
         ? "\n\n### MANDATORY LANGUAGE RULE:\n- Generate ALL text in HINDI.\n- Use professional legal Hindi terminology.\n- Maintain high formal tone."
         : `\n\n### MANDATORY LANGUAGE RULE:\n- Respond entirely in ${language}.`;
 

@@ -98,7 +98,12 @@ router.post('/generate-pdf', async (req, res) => {
         res.send(pdfBuffer);
     } catch (error) {
         logger.error(`[PrecedentsRoute] PDF generation failed: ${error.message}`);
-        res.status(500).json({ error: 'Failed to generate PDF.', details: error.message });
+        console.error("[PDF_ERROR_TRACE]", error);
+        res.status(500).json({ 
+            error: 'Failed to generate PDF.', 
+            details: error.message,
+            stack: process.env.NODE_ENV === 'development' ? error.stack : undefined 
+        });
     }
 });
 
