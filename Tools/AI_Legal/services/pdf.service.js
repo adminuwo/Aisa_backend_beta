@@ -1,4 +1,5 @@
 import puppeteer from 'puppeteer';
+import fs from 'fs';
 import logger from '../../../utils/logger.js';
 
 /**
@@ -196,6 +197,8 @@ export const generatePrecedentPDF = async (precedentData) => {
         `;
 
         const isLinux = process.platform === 'linux';
+        const memUsage = process.memoryUsage();
+        logger.info(`[PDFService] Memory Usage: RSS=${Math.round(memUsage.rss / 1024 / 1024)}MB, Heap=${Math.round(memUsage.heapUsed / 1024 / 1024)}MB`);
         logger.info(`[PDFService] Launching browser (Platform: ${process.platform}) for case: ${caseTitle}`);
         
         // Robust executable path selection
@@ -204,29 +207,65 @@ export const generatePrecedentPDF = async (precedentData) => {
             executablePath = '/usr/bin/chromium';
         }
 
-        browser = await puppeteer.launch({
-            headless: true,
+        if (executablePath && isLinux) {
+            if (!fs.existsSync(executablePath)) {
+                logger.warn(`[PDFService] WARNING: Executable not found at ${executablePath}. Puppeteer may fail.`);
+            }
+        }
+
+        logger.info(`[PDFService] Using executable path: ${executablePath || 'bundled'}`);
+
+        const launchOptions = {
+            headless: 'shell',
             executablePath: executablePath,
+            protocolTimeout: 60000,
             args: [
                 '--no-sandbox', 
                 '--disable-setuid-sandbox',
                 '--disable-dev-shm-usage',
                 '--disable-gpu',
                 '--no-zygote',
+                '--disable-software-rasterizer',
+                '--disable-extensions',
                 '--font-render-hinting=none',
+                '--hide-scrollbars',
+                '--mute-audio',
             ].filter(Boolean)
-        });
+        };
 
-        logger.info(`[PDFService] Browser launched successfully. Opening page...`);
+        // Retry logic for browser launch
+        let launchError;
+        for (let attempt = 1; attempt <= 2; attempt++) {
+            try {
+                logger.info(`[PDFService] Launch attempt ${attempt}/2...`);
+                browser = await puppeteer.launch(launchOptions);
+                break; 
+            } catch (err) {
+                launchError = err;
+                logger.warn(`[PDFService] Launch attempt ${attempt} failed: ${err.message}`);
+                if (attempt === 1) await new Promise(r => setTimeout(r, 1000));
+            }
+        }
+
+        if (!browser) {
+            throw new Error(`Failed to launch browser after 2 attempts: ${launchError?.message}`);
+        }
+
+        logger.info(`[PDFService] Browser launched successfully (PID: ${browser.process()?.pid}). Opening page...`);
         const page = await browser.newPage();
         
+        // Set viewport for consistent rendering
+        await page.setViewport({ width: 794, height: 1122 }); // A4 at 96 DPI
+        
         // Use 'load' instead of 'networkidle0' for better reliability in constrained environments
+        logger.info(`[PDFService] Setting HTML content...`);
         await page.setContent(htmlContent, { waitUntil: 'load', timeout: 30000 });
         
         logger.info(`[PDFService] Generating PDF buffer...`);
         const pdfBuffer = await page.pdf({
             format: 'A4',
             printBackground: true,
+            displayHeaderFooter: false,
             margin: {
                 top: '20px',
                 right: '20px',
@@ -241,10 +280,16 @@ export const generatePrecedentPDF = async (precedentData) => {
 
     } catch (error) {
         if (browser) {
-            try { await browser.close(); } catch (e) {}
+            try { 
+                logger.warn(`[PDFService] Error detected, attempting to close browser...`);
+                await browser.close(); 
+            } catch (e) {
+                logger.error(`[PDFService] Failed to close browser: ${e.message}`);
+            }
         }
         console.error("[PDF_SERVICE_ERROR]", error);
-        logger.error(`[PDFService] Generation failed: ${error.message} - ${error.stack}`);
+        logger.error(`[PDFService] Generation failed: ${error.name} - ${error.message}`);
+        logger.error(`[PDFService] Stack Trace: ${error.stack}`);
         throw new Error(`PDF Generation Error: ${error.message}`);
     }
 };

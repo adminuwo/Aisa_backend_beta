@@ -99,8 +99,18 @@ router.post('/generate-pdf', async (req, res) => {
     } catch (error) {
         logger.error(`[PrecedentsRoute] PDF generation failed: ${error.message}`);
         console.error("[PDF_ERROR_TRACE]", error);
+        
+        // Check for specific Puppeteer/Cloud Run errors
+        let errorMessage = 'Failed to generate PDF document.';
+        if (error.message.includes('launch')) {
+            errorMessage = 'PDF Engine failed to start. Please contact support.';
+        } else if (error.message.includes('timeout')) {
+            errorMessage = 'PDF generation timed out. The document might be too large.';
+        }
+
         res.status(500).json({ 
-            error: 'Failed to generate PDF.', 
+            success: false,
+            error: errorMessage, 
             details: error.message,
             stack: process.env.NODE_ENV === 'development' ? error.stack : undefined 
         });
