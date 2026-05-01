@@ -203,34 +203,43 @@ export const generatePrecedentPDF = async (precedentData) => {
         
         // Robust executable path selection
         let executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
-        if (!executablePath && isLinux) {
-            executablePath = '/usr/bin/chromium';
+        
+        // If path is provided but doesn't exist, try to find it
+        if (executablePath && isLinux && !fs.existsSync(executablePath)) {
+            logger.warn(`[PDFService] Executable not found at ${executablePath}. Searching alternatives...`);
+            executablePath = null;
         }
 
-        if (executablePath && isLinux) {
-            if (!fs.existsSync(executablePath)) {
-                logger.warn(`[PDFService] WARNING: Executable not found at ${executablePath}. Puppeteer may fail.`);
+        if (!executablePath && isLinux) {
+            // Check common locations
+            const paths = ['/usr/bin/chromium', '/usr/bin/chromium-browser', '/usr/bin/google-chrome-stable', '/usr/bin/google-chrome'];
+            for (const p of paths) {
+                if (fs.existsSync(p)) {
+                    executablePath = p;
+                    break;
+                }
             }
         }
 
-        logger.info(`[PDFService] Using executable path: ${executablePath || 'bundled'}`);
+        logger.info(`[PDFService] Final executable path: ${executablePath || 'bundled'}`);
 
         const launchOptions = {
-            headless: 'shell',
+            headless: true, // Use standard headless for better compatibility in Cloud Run
             executablePath: executablePath,
-            protocolTimeout: 60000,
+            protocolTimeout: 120000, // Increase timeout
             args: [
                 '--no-sandbox', 
                 '--disable-setuid-sandbox',
                 '--disable-dev-shm-usage',
                 '--disable-gpu',
                 '--no-zygote',
+                '--single-process', // Can help in low-resource environments
                 '--disable-software-rasterizer',
                 '--disable-extensions',
                 '--font-render-hinting=none',
                 '--hide-scrollbars',
                 '--mute-audio',
-            ].filter(Boolean)
+            ]
         };
 
         // Retry logic for browser launch
