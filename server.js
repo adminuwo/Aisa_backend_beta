@@ -106,9 +106,6 @@ app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 // app.use(fileUpload()); // Removed to avoid conflict with Multer (New AIBASE)
 
-app.get("/ping-top", (req, res) => {
-  res.send("Top ping works");
-})
 
 // Serve static frontend files from 'public' directory
 app.use(express.static(path.join(__dirname, 'public')));
