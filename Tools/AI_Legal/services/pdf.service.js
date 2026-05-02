@@ -224,16 +224,14 @@ export const generatePrecedentPDF = async (precedentData) => {
         logger.info(`[PDFService] Final executable path: ${executablePath || 'bundled'}`);
 
         const launchOptions = {
-            headless: true, // Use standard headless for better compatibility in Cloud Run
+            headless: 'shell', // Use 'shell' for better stability on some environments
             executablePath: executablePath,
-            protocolTimeout: 120000, // Increase timeout
+            protocolTimeout: 240000, // Double the timeout
             args: [
                 '--no-sandbox', 
                 '--disable-setuid-sandbox',
                 '--disable-dev-shm-usage',
                 '--disable-gpu',
-                '--no-zygote',
-                '--single-process', // Can help in low-resource environments
                 '--disable-software-rasterizer',
                 '--disable-extensions',
                 '--font-render-hinting=none',
@@ -241,6 +239,12 @@ export const generatePrecedentPDF = async (precedentData) => {
                 '--mute-audio',
             ]
         };
+
+        // Add Linux-specific flags only on Linux
+        if (isLinux) {
+            launchOptions.args.push('--no-zygote');
+            launchOptions.args.push('--single-process');
+        }
 
         // Retry logic for browser launch
         let launchError;

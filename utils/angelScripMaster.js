@@ -15,7 +15,9 @@ let scripData = null;
 let lastUpdated = 0;
 
 /**
- * Downloads and caches the Angel One Scrip Master
+ * Downloads and caches the Angel One Scrip Master.
+ * Uses an atomic write pattern (stream to .tmp file, rename on success)
+ * to prevent reading a partially-written / truncated JSON file.
  */
 export const syncScripMaster = async (force = false) => {
     try {
@@ -40,31 +42,59 @@ export const syncScripMaster = async (force = false) => {
                 responseType: 'stream'
             });
 
-            const writer = fs.createWriteStream(CACHE_FILE);
+            // --- Atomic write: stream to .tmp file, rename to real file only on success ---
+            // This prevents the real cache file from ever being in a partially-written state.
+            const tmpFile = CACHE_FILE + '.tmp';
+            const writer = fs.createWriteStream(tmpFile);
             response.data.pipe(writer);
 
             await new Promise((resolve, reject) => {
                 writer.on('finish', resolve);
                 writer.on('error', reject);
+                response.data.on('error', reject);
             });
-            
+
+            // Only replace the real cache file after the full download succeeded
+            fs.renameSync(tmpFile, CACHE_FILE);
             logger.info('[AngelScripMaster] Scrip Master updated successfully.');
+        }
+
+        // Validate file is non-empty before parsing
+        const fileStats = fs.statSync(CACHE_FILE);
+        if (fileStats.size === 0) {
+            throw new Error('Scrip Master file is empty after download');
         }
 
         // Load into memory (Caution: ~15MB file, consumes ~50-100MB RAM when parsed)
         const rawData = fs.readFileSync(CACHE_FILE, 'utf8');
         scripData = JSON.parse(rawData);
         lastUpdated = Date.now();
-        
+
         return scripData;
     } catch (error) {
         logger.error(`[AngelScripMaster] sync failed: ${error.message}`);
-        // Fallback to existing cache if available
-        if (fs.existsSync(CACHE_FILE)) {
-             const rawData = fs.readFileSync(CACHE_FILE, 'utf8');
-             scripData = JSON.parse(rawData);
-             return scripData;
+
+        // If we already have in-memory data from a previous successful load, use it
+        if (scripData) {
+            return scripData;
         }
+
+        // Last resort: try the cache file only if it exists and is non-empty
+        if (fs.existsSync(CACHE_FILE)) {
+            try {
+                const fileStats = fs.statSync(CACHE_FILE);
+                if (fileStats.size > 0) {
+                    const rawData = fs.readFileSync(CACHE_FILE, 'utf8');
+                    scripData = JSON.parse(rawData);
+                    return scripData;
+                }
+            } catch (cacheErr) {
+                logger.error(`[AngelScripMaster] Cache fallback also failed: ${cacheErr.message}`);
+                // Delete the corrupt file so the next startup re-downloads it cleanly
+                try { fs.unlinkSync(CACHE_FILE); } catch (_) {}
+            }
+        }
+
         return [];
     }
 };
@@ -74,13 +104,13 @@ export const syncScripMaster = async (force = false) => {
  */
 export const searchInstruments = async (query) => {
     if (!scripData) await syncScripMaster();
-    
+
     const searchLow = query.toUpperCase();
-    
+
     // Filter for Equity instruments only for now, matching the query
     // Filters: Cash market (instrumenttype empty), Symbol contains query
     const results = scripData
-        .filter(item => 
+        .filter(item =>
             (item.exch_seg === 'NSE' || item.exch_seg === 'BSE') &&
             item.instrumenttype === '' && // Empty means Cash/Equity
             (item.symbol.includes(searchLow) || item.name.includes(searchLow))
@@ -99,13 +129,13 @@ export const searchInstruments = async (query) => {
  */
 export const getInstrumentBySymbol = async (symbol, preferredExch = 'NSE') => {
     if (!scripData) await syncScripMaster();
-    
+
     // Clean symbol (remove .BSE or .NSE if present)
     const cleanSym = symbol.split('.')[0].toUpperCase();
-    
+
     // Some symbols in Angel One have "-EQ" suffix
     const searchSym = `${cleanSym}-EQ`;
-    
+
     let match = scripData.find(item => item.symbol === searchSym && item.exch_seg === preferredExch);
     if (!match) {
         match = scripData.find(item => item.symbol === cleanSym && item.exch_seg === preferredExch);
@@ -113,6 +143,6 @@ export const getInstrumentBySymbol = async (symbol, preferredExch = 'NSE') => {
     if (!match) {
         match = scripData.find(item => item.name === cleanSym && item.exch_seg === preferredExch);
     }
-    
+
     return match;
 };

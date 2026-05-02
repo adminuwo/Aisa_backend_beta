@@ -360,35 +360,6 @@ Response Guidelines:
                 key: 'FEATURE_COSTS',
                 value: JSON.stringify({
                     "chat": 2,
-                    "web_search": 25,
-                    "deep_search": 85,
-                    "agent_chat": 60,
-                    "realtime_chat": 60,
-                    "knowledge_base": 3,
-                    "generate_image": 50,
-                    "generate_image_hd": 90,
-                    "generate_image_ultra": 120,
-                    "edit_image": 50,
-                    "video_multipliers": {
-                        "veo-3.1-fast-generate-001": {
-                            "4k": 333,
-                            "default": 166
-                        },
-                        "veo-3.1-generate-001": {
-                            "4k": 666,
-                            "default": 500
-                        }
-                    },
-                    "code_writer": 3,
-                    "convert_audio": 90,
-                    "document_convert": 3
-                }),
-                description: 'Credit costs for various AISA features and tools (Targeting 50% Profit Margin over Vertex AI Costs).'
-            },
-            {
-                key: 'FEATURE_COSTS',
-                value: JSON.stringify({
-                    "chat": 2,
                     "web_search": 60,
                     "deep_search": 85,
                     "agent_chat": 60,
