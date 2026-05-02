@@ -381,23 +381,9 @@ Maintain any text response outside the JSON block.`;
             }
 
             // Step 4: Final Processing
-            if (needsRAG || (ragContext && ragContext.text)) {
-                // If context is missing but RAG was needed, we still proceed to provide a general AI response.
-                if (!ragContext || !ragContext.sources || ragContext.sources.length === 0) {
-
-                    if (hasCompanyKeyword) {
-                        ragContext = ragContext || {};
-                        ragContext.sources = [{
-                            title: "Unified Web Options",
-                            url: "https://uwo24.com/",
-                            snippet: "Official information about AISA and UWO services.",
-                            document_title: "Unified Web Options",
-                            source_type: "URL",
-                            chunk_id: `brand_${Date.now()}`
-                        }];
-                    }
-                }
-
+            // Only proceed with RAG generation if we have actual context from uploaded documents.
+            // Otherwise, fall through to Priority 3 (General Vertex AI Chat).
+            if (ragContext && ragContext.sources && ragContext.sources.length > 0) {
                 const promptWithMemory = buildMemoryPrompt(message);
                 // Step 4: Answer Generation (Context + Original Question)
                 const ragInstructionWithLink = `${dynamicSystemInstruction}\n\n### WEBSITE CITATION RULE:\nWhenever you provide information about AISA or UWO based on the provided company documents, you MUST mention the official website: https://uwo24.com/`;

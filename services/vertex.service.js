@@ -259,9 +259,7 @@ export const detectRAGNeed = async (query) => {
     try {
         const lower = query.toLowerCase().trim();
 
-        // Fast-path NO: Only skip pure conversational fillers and very short inputs
-        // DO NOT block question phrases like "what is", "explain", "how to" —
-        // these are common ways users ask about uploaded documents.
+        // 1. Fast-path NO: Casual greetings and very short inputs
         const pureFillers = [
             'hi', 'hello', 'hii', 'hey', 'thanks', 'thank you', 'okay', 'ok',
             'great', 'awesome', 'happy to help', 'see you', 'bye', 'goodbye',
@@ -269,38 +267,24 @@ export const detectRAGNeed = async (query) => {
             'sure', 'alright', 'noted', 'understood'
         ];
 
-        if (pureFillers.some(f => lower === f) || query.length < 5) {
-            logger.info(`[RAG-Detector] Fast-path NO (Filler/Short) for: "${query}"`);
+        if (pureFillers.some(f => lower === f) || query.length < 3) {
             return false;
         }
 
-        const detectorTemplate = configService.getConfig('RAG_DETECTOR_PROMPT', 'Needs RAG? {query}');
-        const detectorPrompt = detectorTemplate.replace('{query}', query);
-        const result = await AskVertexRaw(detectorPrompt, {
-            modelOverride: 'gemini-2.5-flash',
-            maxOutputTokens: 10,
-            temperature: 0.1
-        });
-        const decision = (result || "").trim().toUpperCase();
-        logger.info(`[RAG-Detector] AI Decision for "${query.substring(0, 50)}...": ${decision || 'EMPTY'}`);
-
-        // Robust YES check: handle "YES", "YES.", "YES\n", "YES, ..."
-        const isYes = decision === 'YES' || decision.startsWith('YES') || decision.includes('YES');
+        // 2. STRICT KEYWORD MATCHING: Only trigger RAG for AISA, AI MALL, UWO, and specific features
+        const ragKeywords = ['aisa', 'ai mall', 'uwo', 'feature', 'pricing', 'plan', 'mall', 'refund', 'policy', 'capabilities'];
+        const hasRagKeyword = ragKeywords.some(k => lower.includes(k));
         
-        // Manual Keyword Override: If AI is unsure but keywords are present, force RAG
-        const companyKeywords = ['aisa', 'cashflow', 'uwo', 'mall', 'pricing', 'policy', 'feature', 'how to', 'what is'];
-        const hasKeyword = companyKeywords.some(k => query.toLowerCase().includes(k));
-        
-        if (!isYes && hasKeyword) {
-            logger.info(`[RAG-Detector] Decision override: YES (Found company keyword or question phrase in query)`);
+        if (hasRagKeyword) {
+            logger.info(`[RAG-Detector] Keyword match triggered RAG for: "${query}"`);
             return true;
         }
 
-        return isYes;
+        // 3. DEFAULT: Use Normal Chat for everything else
+        return false;
     } catch (error) {
         logger.error(`[RAG-Detector] Error: ${error.message}`);
-        // On error, default to true so we don't silently skip RAG
-        return true;
+        return false;
     }
 }
 

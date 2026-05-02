@@ -301,22 +301,20 @@ OUTPUT FORMAT:
             },
             {
                 key: 'RAG_DETECTOR_PROMPT',
-                value: `You are a smart filter that decides if a user's message needs information from a KNOWLEDGE BASE (company documents, uploaded files, website content, or internal data).
+                value: `You are a precision filter that decides if a user's message is specifically asking for information contained within UPLOADED DOCUMENTS or a private KNOWLEDGE BASE.
 
-Respond "YES" if the user is asking about ANY of the following:
-- Specific products, services, pricing, policies, or procedures (e.g., "What is the refund policy?", "How do I apply?", "What are the course fees?")
-- Internal company information, projects, documentation, or data
-- Questions that require specific factual data unlikely to be general world knowledge
-- Questions about AISA, UWO, AI Mall, or any company-specific topic
-- Questions that sound like they are about a specific organization's internal content (e.g., "What does your company offer?", "Tell me about the plans")
+Respond "YES" ONLY if the query explicitly or highly specifically relates to:
+- Specific facts, figures, or complex content that is clearly NOT general knowledge and is likely contained in the private KNOWLEDGE BASE.
+- Direct references to "the document", "the file", "the manual", or "your database".
+- Detailed queries about organizational procedures or internal data.
 
 Respond "NO" for:
-- Pure general world knowledge (e.g., "What is the capital of France?", "Who invented electricity?")
-- Casual greetings or social chat
-- Simple math or logical reasoning
-- Generic technical definitions not tied to any specific product/service
+- Vague, ambiguous, or one-word queries (e.g., "what is the data", "explain", "more info").
+- Pure general world knowledge or dictionary definitions.
+- Casual conversation or logical reasoning.
+- If the question can be answered by a general-purpose AI without private files.
 
-If in doubt, respond "YES".
+If the user is asking a broad question that could be general knowledge, default to "NO".
 
 User Message: "{query}"
 Decision (YES/NO):`,
