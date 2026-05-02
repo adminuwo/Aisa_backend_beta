@@ -10,7 +10,7 @@ import logger from '../../utils/logger.js';
 import { buildToolListForPrompt } from './toolRegistry.js';
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const CLASSIFIER_MODEL = 'gpt-5.4';
+const CLASSIFIER_MODEL = 'gpt-4o-mini';
 const CONFIDENCE_THRESHOLD = 0.75;
 
 /**
@@ -78,7 +78,6 @@ ${toolList}
 - legal_timeline_generator: 95
 - legal_compliance_checker: 140
 - legal_law_comparator: 160
-- stock_researcher: 50
 - legal_argument_builder: 180
 
 ## Output JSON Schema (return EXACTLY this structure)

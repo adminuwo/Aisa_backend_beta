@@ -93,7 +93,7 @@ Output: "A golden retriever dog playing on a sunny beach, golden hour lighting, 
 
         // Official OpenAI Responses API
         const response = await client.responses.create({
-            model: 'gpt-5.4',
+            model: 'gpt-4o-mini',
             instructions: systemInstruction,
             input: `User Prompt: "${normalizedPrompt}"\n\nAdd visual quality descriptors. KEEP the exact subject. Return enhanced prompt only.`,
         });

@@ -59,12 +59,12 @@ Understand the user's expertise level and topic preference implicitly from their
 
         messages.push({ role: 'user', content: userContent });
 
-        logger.info(`[OPENAI] Sending text request to gpt-5.4...`);
+        logger.info(`[OPENAI] Sending text request to gpt-4o...`);
 
         const response = await axios.post(
             'https://api.openai.com/v1/chat/completions',
             {
-                model: options.model || 'gpt-5.4',
+                model: options.model || 'gpt-4o',
                 messages: messages,
                 max_completion_tokens: options.max_tokens || 4096,
                 temperature: options.temperature || 0.7,

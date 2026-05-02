@@ -42,7 +42,7 @@ export const performDeepSearch = async (query, userLanguage = 'English') => {
         `;
 
         const planResponse = await axios.post('https://api.openai.com/v1/chat/completions', {
-            model: 'gpt-5.4',
+            model: 'gpt-4o',
             messages: [{ role: 'user', content: planPrompt }],
             response_format: { type: "json_object" }
         }, {
@@ -180,7 +180,7 @@ export const performDeepSearch = async (query, userLanguage = 'English') => {
 
         try {
             const finalReport = await axios.post('https://api.openai.com/v1/chat/completions', {
-                model: 'gpt-5.4', // Switched to gpt-5.4 for better reliability/speed
+                model: 'gpt-4o', // Switched to gpt-4o for better reliability/speed
                 messages: [{ role: 'user', content: synthesisPrompt }],
                 temperature: 0.3
             }, {
