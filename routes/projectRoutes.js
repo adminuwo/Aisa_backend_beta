@@ -125,76 +125,93 @@ const performCaseAnalysis = async (req, res) => {
         
         const aiData = typeof aiResponse === "string" ? JSON.parse(aiResponse) : aiResponse;
 
-        // Map AI keys to normalized local keys
+        // Sanitization helpers
+        const toStr = (val, fallback = '') => {
+            if (!val) return fallback;
+            if (typeof val === 'string') return val;
+            return JSON.stringify(val);
+        };
+
+        const toDate = (val) => {
+            if (!val) return null;
+            const d = new Date(val);
+            return isNaN(d.getTime()) ? null : d;
+        };
+
+        // Map AI keys to normalized local keys with safety checks
         const normalized = {
-            summary: aiData.executive_summary || aiData.summary,
+            summary: toStr(aiData.executive_summary || aiData.summary),
             strength: aiData.case_strength ?? aiData.strengthScore ?? aiData.strength ?? 0,
             probability: aiData.win_probability ?? aiData.winProbability ?? aiData.probability ?? 0,
-            timeline: aiData.timeline || [],
-            evidence: aiData.evidence || [],
-            research: aiData.legal_research || aiData.research || [],
-            steps: aiData.process_steps || aiData.steps || [],
+            timeline: Array.isArray(aiData.timeline) ? aiData.timeline : [],
+            evidence: Array.isArray(aiData.evidence) ? aiData.evidence : [],
+            research: Array.isArray(aiData.legal_research || aiData.research) ? (aiData.legal_research || aiData.research) : [],
+            steps: Array.isArray(aiData.process_steps || aiData.steps) ? (aiData.process_steps || aiData.steps) : [],
             risk: aiData.risk_assessment || aiData.risk || {},
-            vulnerabilities: aiData.critical_vulnerabilities || aiData.weakPoints || [],
-            opponent: aiData.opponent_strategy || aiData.opponentStrategies || [],
-            relief: aiData.primary_relief || aiData.reliefGoals || "",
-            strategy: aiData.strategy_recommendation || aiData.strategyRecommendations || []
+            vulnerabilities: Array.isArray(aiData.critical_vulnerabilities || aiData.weakPoints) ? (aiData.critical_vulnerabilities || aiData.weakPoints) : [],
+            opponent: Array.isArray(aiData.opponent_strategy || aiData.opponentStrategies) ? (aiData.opponent_strategy || aiData.opponent_strategies) : [],
+            relief: toStr(aiData.primary_relief || aiData.reliefGoals),
+            strategy: Array.isArray(aiData.strategy_recommendation || aiData.strategyRecommendations) ? (aiData.strategy_recommendation || aiData.strategyRecommendations) : []
         };
 
         const updateData = {
             caseSummary: normalized.summary || project.caseSummary,
-            clientName: project.clientName || aiData.parties?.plaintiff?.name || '',
-            opponentName: project.opponentName || aiData.parties?.defendant?.name || '',
+            clientName: project.clientName || toStr(aiData.parties?.plaintiff?.name || aiData.parties?.plaintiff) || '',
+            opponentName: project.opponentName || toStr(aiData.parties?.defendant?.name || aiData.parties?.defendant) || '',
             reliefGoals: normalized.relief || project.reliefGoals,
             intelligence: {
-                strengthScore: normalized.strength,
-                winProbability: normalized.probability,
-                riskLevel: normalized.risk?.level || 'Medium',
-                weakPoints: [...(normalized.vulnerabilities || []), normalized.risk?.reason].filter(Boolean),
-                opponentStrategies: normalized.opponent || [],
-                strategyRecommendations: normalized.strategy || [],
+                strengthScore: Number(normalized.strength) || 0,
+                winProbability: Number(normalized.probability) || 0,
+                riskLevel: ['Low', 'Medium', 'High', 'Critical'].includes(normalized.risk?.level) ? normalized.risk.level : 'Medium',
+                weakPoints: [...(normalized.vulnerabilities || []), normalized.risk?.reason].filter(Boolean).map(v => toStr(v)),
+                opponentStrategies: normalized.opponent.map(s => toStr(s)),
+                strategyRecommendations: normalized.strategy.map(s => toStr(s)),
                 missingEvidence: []
             },
             facts: [
                 ...(project.facts || []),
                 ...normalized.timeline
+                    .filter(f => f && (f.event || f.title))
                     .filter(f => !(project.facts || []).some(fx => fx.event === (f.event || f.title)))
                     .map(f => ({
-                        date: f.date ? new Date(f.date) : null,
-                        event: f.event || f.title,
-                        description: f.description || f.event || f.title
+                        date: toDate(f.date),
+                        event: toStr(f.event || f.title),
+                        description: toStr(f.description || f.event || f.title)
                     }))
             ],
-            legalIssues: normalized.research.map(r => r.law || r.lawName),
+            legalIssues: normalized.research.map(r => toStr(r.law || r.lawName)).filter(Boolean),
             tasks: [
                 ...(project.tasks || []),
                 ...normalized.steps
+                    .filter(p => p && (p.step || p.title))
                     .filter(p => !(project.tasks || []).some(tx => tx.title === (p.step || p.title)))
                     .map(p => ({
-                        title: p.step || p.title,
+                        title: toStr(p.step || p.title),
                         status: 'Pending',
-                        priority: p.priority || 'Medium'
+                        priority: toStr(p.priority) || 'Medium'
                     }))
             ],
             evidence: [
                 ...(project.evidence || []),
                 ...normalized.evidence
+                    .filter(e => e && (e.title || e.name || e.description))
                     .filter(e => !(project.evidence || []).some(ex => ex.name === (e.title || e.name || e.description)))
                     .map(e => ({
-                        name: e.title || e.name || e.description,
-                        type: e.type || 'Document',
-                        status: e.strength || 'Moderate',
+                        name: toStr(e.title || e.name || e.description),
+                        type: toStr(e.type) || 'Document',
+                        status: toStr(e.strength) || 'Moderate',
                         uploadDate: new Date()
                     }))
             ],
             research: [
                 ...(project.research || []),
                 ...normalized.research
+                    .filter(r => r && (r.law || r.lawName))
                     .filter(r => !(project.research || []).some(rx => rx.lawName === (r.law || r.lawName) && rx.section === (r.section || '')))
                     .map(r => ({
-                        lawName: r.law || r.lawName,
-                        section: r.section || '',
-                        description: r.description
+                        lawName: toStr(r.law || r.lawName),
+                        section: toStr(r.section),
+                        description: toStr(r.description)
                     }))
             ]
         };
