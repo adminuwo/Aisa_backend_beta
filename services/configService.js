@@ -301,20 +301,22 @@ OUTPUT FORMAT:
             },
             {
                 key: 'RAG_DETECTOR_PROMPT',
-                value: `You are a strict filter that decides if a user's message needs info from a PRIVATE COMPANY DATABASE (UWO/AISA).
+                value: `You are a smart filter that decides if a user's message needs information from a KNOWLEDGE BASE (company documents, uploaded files, website content, or internal data).
 
-Respond "YES" ONLY if the user is asking specifically about:
-- Internal company projects, products, or services (e.g., "What is AI Mall?", "AISA capabilities").
-- Internal financial, technical, or procedural data specific to UWO.
-- Detailed documentation questions about company services.
+Respond "YES" if the user is asking about ANY of the following:
+- Specific products, services, pricing, policies, or procedures (e.g., "What is the refund policy?", "How do I apply?", "What are the course fees?")
+- Internal company information, projects, documentation, or data
+- Questions that require specific factual data unlikely to be general world knowledge
+- Questions about AISA, UWO, AI Mall, or any company-specific topic
+- Questions that sound like they are about a specific organization's internal content (e.g., "What does your company offer?", "Tell me about the plans")
 
-Respond "NO" for EVERYTHING ELSE, especially:
-- Common definitions (e.g., "What is IOT?", "What is AI?", "What is an API?").
-- General knowledge easily found on Google.
-- Greetings, social chat, or gratitude.
-- Questions not explicitly mentioning company-specific terms.
+Respond "NO" for:
+- Pure general world knowledge (e.g., "What is the capital of France?", "Who invented electricity?")
+- Casual greetings or social chat
+- Simple math or logical reasoning
+- Generic technical definitions not tied to any specific product/service
 
-If you are even 1% unsure, respond "NO".
+If in doubt, respond "YES".
 
 User Message: "{query}"
 Decision (YES/NO):`,
@@ -476,6 +478,13 @@ DO NOT include any prefix. Keep it under 80 words for maximum impact.`,
             } else if (config.key === 'IMAGE_PROMPT_ENHANCER' && !existing.value.includes('autocorrect it to the intended subject')) {
                 // FORCE UPDATE: Enforce strict subject preservation and autocorrect for image generation
                 logger.info(`[ConfigService] Synchronizing IMAGE_PROMPT_ENHANCER to prevent hallucination.`);
+                existing.value = config.value;
+                existing.lastUpdated = Date.now();
+                await existing.save();
+            } else if (config.key === 'RAG_DETECTOR_PROMPT' && existing.value.includes('If you are even 1% unsure, respond "NO"')) {
+                // FORCE UPDATE: Broaden RAG detection — old prompt was too strict (UWO-only).
+                // New prompt detects queries about ANY uploaded knowledge base documents.
+                logger.info(`[ConfigService] Updating RAG_DETECTOR_PROMPT to broader knowledge base detection.`);
                 existing.value = config.value;
                 existing.lastUpdated = Date.now();
                 await existing.save();

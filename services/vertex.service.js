@@ -93,6 +93,16 @@ export const retrieveContextFromRag = async (query, topK = 8, category = 'LEGAL'
             logger.error("[Vertex RAG] Retrieval failed: GCP_PROJECT_ID not set in environment.");
             return null;
         }
+
+        // ✅ DIAGNOSTIC: Print exactly what we're querying against
+        logger.info(`[RAG-RETRIEVE] ══════════════════════════════════════════`);
+        logger.info(`[RAG-RETRIEVE] Project  : ${projectId}`);
+        logger.info(`[RAG-RETRIEVE] Location : ${location}`);
+        logger.info(`[RAG-RETRIEVE] CorpusID : ${corpusId}`);
+        logger.info(`[RAG-RETRIEVE] Query    : "${query}"`);
+        logger.info(`[RAG-RETRIEVE] TopK     : ${topK} | Category: ${category}`);
+        logger.info(`[RAG-RETRIEVE] ══════════════════════════════════════════`);
+
         const client = await auth.getClient();
         const token = await client.getAccessToken();
 
@@ -116,7 +126,9 @@ export const retrieveContextFromRag = async (query, topK = 8, category = 'LEGAL'
         });
 
         const contexts = response.data?.contexts?.contexts || [];
+        logger.info(`[RAG-RETRIEVE] Vertex returned ${contexts.length} chunk(s) for query: "${query}"`);
         if (contexts.length === 0) {
+            logger.warn(`[RAG-RETRIEVE] ⚠️ EMPTY RESULT — Vertex found 0 chunks. Check: corpus location matches GCP_LOCATION, corpus has indexed files, and query is relevant.`);
             return null;
         }
 
@@ -246,27 +258,19 @@ export const analyzeRAGRequirements = async (query) => {
 export const detectRAGNeed = async (query) => {
     try {
         const lower = query.toLowerCase().trim();
-        // Fast-path: check for common conversational fillers, greetings, and generic definitions
-        const fillers = [
-            'hi', 'hello', 'thanks', 'thank you', 'okay', 'dynamic', 'great', 'awesome',
-            'happy to help', 'see you', 'bye', 'hope this helps', 'hope this clears things up',
-            'no problem', 'you are welcome', 'got it', 'sure', 'alright', 'what is', 'define',
-            'explain', 'how to', 'meaning of'
+
+        // Fast-path NO: Only skip pure conversational fillers and very short inputs
+        // DO NOT block question phrases like "what is", "explain", "how to" —
+        // these are common ways users ask about uploaded documents.
+        const pureFillers = [
+            'hi', 'hello', 'hii', 'hey', 'thanks', 'thank you', 'okay', 'ok',
+            'great', 'awesome', 'happy to help', 'see you', 'bye', 'goodbye',
+            'hope this helps', 'no problem', 'you are welcome', 'got it',
+            'sure', 'alright', 'noted', 'understood'
         ];
 
-        // If it starts with a general definition phrase and doesn't mention brand keywords
-        const brandKeywords = ['uwo', 'aisa', 'ai mall', 'unified web'];
-        const hasBrandKeyword = brandKeywords.some(bk => lower.includes(bk));
-
-        const generalPhrases = [
-            'what is', 'define', 'how to', 'meaning of', 'explain', 'tell me about',
-            'suggest', 'why is', 'who is', 'give me', 'describe', 'difference between',
-            'how does', 'why does', 'what are', 'where is'
-        ];
-        const isGeneralDefinition = generalPhrases.some(p => lower.startsWith(p)) && !hasBrandKeyword;
-
-        if (fillers.some(f => lower === f) || query.length < 5 || isGeneralDefinition) {
-            logger.info(`[RAG-Detector] Fast-path NO (General Content) for: "${query}"`);
+        if (pureFillers.some(f => lower === f) || query.length < 5) {
+            logger.info(`[RAG-Detector] Fast-path NO (Filler/Short) for: "${query}"`);
             return false;
         }
 
@@ -277,14 +281,26 @@ export const detectRAGNeed = async (query) => {
             maxOutputTokens: 10,
             temperature: 0.1
         });
-        const decision = result.trim().toUpperCase();
-        logger.info(`[RAG-Detector] AI Decision for "${query}": ${decision}`);
+        const decision = (result || "").trim().toUpperCase();
+        logger.info(`[RAG-Detector] AI Decision for "${query.substring(0, 50)}...": ${decision || 'EMPTY'}`);
 
-        // Check if decision starts with YES or is just YES
-        return decision === 'YES' || decision.startsWith('YES\n') || decision.startsWith('YES ');
+        // Robust YES check: handle "YES", "YES.", "YES\n", "YES, ..."
+        const isYes = decision === 'YES' || decision.startsWith('YES') || decision.includes('YES');
+        
+        // Manual Keyword Override: If AI is unsure but keywords are present, force RAG
+        const companyKeywords = ['aisa', 'cashflow', 'uwo', 'mall', 'pricing', 'policy', 'feature', 'how to', 'what is'];
+        const hasKeyword = companyKeywords.some(k => query.toLowerCase().includes(k));
+        
+        if (!isYes && hasKeyword) {
+            logger.info(`[RAG-Detector] Decision override: YES (Found company keyword or question phrase in query)`);
+            return true;
+        }
+
+        return isYes;
     } catch (error) {
         logger.error(`[RAG-Detector] Error: ${error.message}`);
-        return false;
+        // On error, default to true so we don't silently skip RAG
+        return true;
     }
 }
 

@@ -140,7 +140,7 @@ export const classifyIntent = async (message, attachments = [], conversationSumm
                     { role: 'user', content: userContent }
                 ],
                 temperature: 0.1,
-                max_tokens: 400,
+                max_completion_tokens: 400,
                 response_format: { type: 'json_object' }
             },
             {

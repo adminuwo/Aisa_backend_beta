@@ -217,6 +217,13 @@ Maintain any text response outside the JSON block.`;
             classification = intentResult;
             needsRAG = ragResult.needsRAG;
             rewrittenQuery = ragResult.rewrittenQuery;
+            
+            logger.info(`[RAG-Pipeline] Query Evaluation Complete:`);
+            logger.info(`[RAG-Pipeline] ├─ Original Query : "${message}"`);
+            logger.info(`[RAG-Pipeline] ├─ Needs RAG      : ${needsRAG ? '✅ YES' : '❌ NO'}`);
+            if (needsRAG) {
+                logger.info(`[RAG-Pipeline] └─ Rewritten      : "${rewrittenQuery}"`);
+            }
         } catch (preProcessErr) {
             logger.warn(`[AI-Service] Pre-processing failed: ${preProcessErr.message}`);
         }
@@ -322,8 +329,9 @@ Maintain any text response outside the JSON block.`;
             let combinedContext = null;
             if (mode === 'LEGAL_TOOLKIT') {
                 logger.info(`[LegalToolkit] Merging Case Context and RAG for Priority Rule.`);
-                const rewrittenQuery = await vertexService.rewriteQuery(message);
-                const ragContext = await vertexService.retrieveContextFromRag(rewrittenQuery, 8, 'LEGAL');
+                const ragAnalysis = await vertexService.analyzeRAGRequirements(message).catch(() => ({ needsRAG: true, rewrittenQuery: message }));
+                const legalRewrittenQuery = ragAnalysis.rewrittenQuery || message;
+                const ragContext = await vertexService.retrieveContextFromRag(legalRewrittenQuery, 8, 'LEGAL');
 
                 combinedContext = `📄 CASE CONTEXT (PRIMARY):\n${activeDocContent || "Refer to attached file contents."}\n\n📚 LEGAL KNOWLEDGE (RAG - REFERENCE):\n${ragContext?.text || "No relevant legal references found."}`;
             }
@@ -342,11 +350,13 @@ Maintain any text response outside the JSON block.`;
             let ragContext = null;
             if (needsRAG) {
                 const targetCategory = (mode === 'LEGAL_TOOLKIT' || legalInstruction) ? 'LEGAL' : 'GENERAL';
-                logger.info(`[RAG-Logic] Target Category: ${targetCategory}`);
+                logger.info(`[RAG-Pipeline] Triggering Vertex AI Retrieval... (Category: ${targetCategory})`);
                 ragContext = await vertexService.retrieveContextFromRag(rewrittenQuery, 8, targetCategory);
 
-                if (!ragContext) {
-                    logger.warn(`[RAG-Logic] No context found for ${targetCategory}. Allowing fallback to general model.`);
+                if (!ragContext || !ragContext.sources || ragContext.sources.length === 0) {
+                    logger.warn(`[RAG-Pipeline] ⚠️ No context found. Allowing fallback handling.`);
+                } else {
+                    logger.info(`[RAG-Pipeline] ✅ Successfully retrieved context with ${ragContext.sources.length} sources.`);
                 }
 
                 // Logging
@@ -362,11 +372,12 @@ Maintain any text response outside the JSON block.`;
                         })) || [],
                         userId: userId || 'admin'
                     });
+                    logger.info(`[RAG-Pipeline] 💾 Saved QueryLog to database.`);
                 } catch (logErr) {
-                    logger.error(`[QueryLog] Failed: ${logErr.message}`);
+                    logger.error(`[RAG-Pipeline] [QueryLog] Failed: ${logErr.message}`);
                 }
             } else {
-                logger.info(`[RAG] Skipping retrieval. Query "${message}" is generic.`);
+                logger.info(`[RAG-Pipeline] Skipping retrieval step (Query determined generic).`);
             }
 
             // Step 4: Final Processing
@@ -406,12 +417,19 @@ Maintain any text response outside the JSON block.`;
                     ? `📄 CASE CONTEXT: No specific document uploaded. Relying on legal principles.\n\n📚 LEGAL KNOWLEDGE (RAG):\n${ragContext?.text}`
                     : ragContext?.text;
 
+                logger.info(`[RAG-Pipeline] Generating final answer using RAG context...`);
                 const ragResponse = await vertexService.askVertex(promptWithMemory, labeledRagContext, {
                     userName,
                     systemInstruction: `${ragInstructionWithLink}\n\n${langSwitchRule}\n\n### LANGUAGE RULE: ${langContext}\n\n${legalInstruction}`,
                     mode: 'RAG'
                 });
-                finalResponseData = { text: ragResponse, isRealTime: false, sources: ragContext?.sources || [], mode: 'RAG' };
+                
+                logger.info(`[RAG-Pipeline] ✅ RAG Response Generated Successfully (${ragResponse?.length || 0} chars).`);
+                
+                // Prepend [RAG] indicator to the text so the user knows it's from knowledge base
+                const finalRagText = ragResponse?.startsWith('[RAG]') ? ragResponse : `[RAG] ${ragResponse}`;
+                
+                finalResponseData = { text: finalRagText, isRealTime: false, sources: ragContext?.sources || [], mode: 'RAG' };
             } else {
                 // PRIORITY 3: Multi-Model or Vertex AI General Chat
                 const promptWithMemory = buildMemoryPrompt(message);

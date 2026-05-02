@@ -155,7 +155,7 @@ router.post("/", optionalVerifyToken, identifyGuest, async (req, res) => {
     let reply = chatResponse.text || "";
     let isWebSearchResponse = chatResponse.isRealTime || false;
     let searchSources = chatResponse.sources || [];
-    let detectedMode = mode || chatResponse.mode || 'CHAT';
+    let detectedMode = chatResponse.mode || mode || 'CHAT';
 
     // 3. POST-PROCESSING: MAGIC TOOLS EXECUTION
     const finalResponse = {
