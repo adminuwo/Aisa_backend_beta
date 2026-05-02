@@ -162,7 +162,7 @@ app.use('/api/connectors', connectorsRoutes);
 app.use('/api/pricing', pricingRoutes);
 app.use('/api/subscription', subscriptionRoutes);
 app.use('/api/payment', paymentRoutes);
-app.get('/api/debug-payment', (req, res) => res.json({ msg: "payment route check" }));
+
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/ai-ad', aiAdAgentRoutes);
 app.use('/api/social-agent', socialAgentRoutes);
@@ -181,7 +181,6 @@ app.use('/api/cases', projectRoutes);
 
 // Broad Fallbacks (should be last and as specific as possible)
 app.use('/api/public', chatRoutes); // Allow /api/public/share/...
-app.use('/api/public', dashboardRoutes);
 
 
 // AIBASE (V3) - With Credit System
