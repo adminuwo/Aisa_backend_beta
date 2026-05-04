@@ -1,4 +1,4 @@
-ï»¿import logger from '../utils/logger.js';
+import logger from '../utils/logger.js';
 import * as vertexService from './vertex.service.js';
 import { safeParseLLMJson } from '../utils/jsonUtils.js';
 import { AskOpenAIRaw } from './openai.service.js';
@@ -164,7 +164,7 @@ export const generate30DayStrategy = async (workspaceId, { maxDays = null } = {}
     const currentYear = new Date().getFullYear();
     const startDate = new Date(currentYear, monthIndex, 1);
     
-    // Calculate actual days Î“Ã‡Ã¶ cap by maxDays for free plan, otherwise use user's selected duration
+    // Calculate actual days GÇö cap by maxDays for free plan, otherwise use user's selected duration
     const totalDaysInMonth = new Date(currentYear, monthIndex + 1, 0).getDate();
     const effectiveDays = maxDays ? Math.min(maxDays, totalDaysInMonth) : Math.min(userSelectedDuration, totalDaysInMonth);
     const totalWeeks = Math.ceil(effectiveDays / 7);
@@ -293,7 +293,7 @@ export const generateContentForSpecificRow = async (workspaceId, entryId) => {
 
   logger.debug(`[GenerationService] Normalized attributes: platform=${platform}, type=${type}`);
 
-  // â‰¡Æ’Â¢Ã­âˆ©â••Ã… Ensure complete isolation between Content and Hashtag regeneration.
+  // =ƒ¢ín+Å Ensure complete isolation between Content and Hashtag regeneration.
   // If this is a regeneration (entry.status is already 'generated'), we strictly KEEP the old hashtags.
   // We also hard-cap the initial LLM output to 30 to prevent bloated lists on the first run.
   const isRegeneration = entry.status === 'generated';
@@ -468,8 +468,8 @@ const updateUsage = (usage, type) => {
 // --- REAL IMAGE GENERATION (AI Ads Agent pipeline) ---
 
 /**
- * STEP 2.5 Î“Ã‡Ã¶ BRAND LOGO OVERLAY
- * Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡
+ * STEP 2.5 GÇö BRAND LOGO OVERLAY
+ * GöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇ
  * Takes a generated image URL + a brand logoUrl, downloads both,
  * and uses Gemini 2.5 Flash image editing to composite the logo
  * onto the top-left corner of the generated image.
@@ -499,28 +499,28 @@ const isGeminiSupportedImage = (mime) => GEMINI_SUPPORTED_IMAGE_MIMES.has(mime.t
 
 const applyVisualOverlays = async (imageUrl, logoUrl, headingText, subheadingText, aspectRatio = '1:1') => {
   if (!logoUrl && !headingText && !subheadingText) {
-    console.log('    [VisualOverlay] Î“Ã…Â¡âˆ©â••Ã…  Skipping Î“Ã‡Ã¶ no text or logo to overlay.');
+    console.log('    [VisualOverlay] GÅ¡n+Å  Skipping GÇö no text or logo to overlay.');
     return imageUrl;
   }
 
-  console.log('    [VisualOverlay] â‰¡Æ’Ã…â•–âˆ©â••Ã…  Applying overlays (Logo + Text)...');
+  console.log('    [VisualOverlay] =ƒÅ+n+Å  Applying overlays (Logo + Text)...');
   const overlayStart = Date.now();
 
   try {
     // 1. Download the generated image as base64
-    //    Use a longer timeout (45 s) Î“Ã‡Ã¶ full-res Gemini images can be several MB.
+    //    Use a longer timeout (45 s) GÇö full-res Gemini images can be several MB.
     const imageResponse = await axios.get(imageUrl, { responseType: 'arraybuffer', timeout: 45000 });
     const imageData = imageResponse.data;
 
     if (!imageData || imageData.byteLength < 100) {
-      console.warn(`    [VisualOverlay] Î“ÃœÃ¡âˆ©â••Ã…  Downloaded image is empty/too small (${imageData?.byteLength ?? 0} bytes) Î“Ã‡Ã¶ skipping overlay.`);
+      console.warn(`    [VisualOverlay] GÜán+Å  Downloaded image is empty/too small (${imageData?.byteLength ?? 0} bytes) GÇö skipping overlay.`);
       return imageUrl;
     }
 
     const imageBase64 = Buffer.from(imageData).toString('base64');
-    // Force a valid image MIME Î“Ã‡Ã¶ GCS signed URLs often return application/octet-stream
+    // Force a valid image MIME GÇö GCS signed URLs often return application/octet-stream
     const imageMime = toImageMime(imageResponse.headers['content-type']);
-    console.log(`    [VisualOverlay] â‰¡Æ’Ã´Âª Image downloaded: ${imageData.byteLength} bytes | MIME: ${imageMime}`);
+    console.log(`    [VisualOverlay] =ƒôª Image downloaded: ${imageData.byteLength} bytes | MIME: ${imageMime}`);
 
     // 2. Download the brand logo as base64 (if available)
     let logoBase64 = null;
@@ -538,7 +538,7 @@ const applyVisualOverlays = async (imageUrl, logoUrl, headingText, subheadingTex
         // If the logo is an ICO (unsupported by Gemini and sharp natively), convert it to PNG using Google Favicon API
         if (rawContentType.includes('icon') || logoUrl.toLowerCase().endsWith('.ico')) {
           try {
-            console.log(`    [VisualOverlay] â‰¡Æ’Ã¶Ã¤ ICO format detected. Fetching PNG equivalent via Favicon API...`);
+            console.log(`    [VisualOverlay] =ƒöä ICO format detected. Fetching PNG equivalent via Favicon API...`);
             const urlObj = new URL(logoUrl);
             const domain = urlObj.hostname;
             const googleFaviconUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=256`;
@@ -546,21 +546,21 @@ const applyVisualOverlays = async (imageUrl, logoUrl, headingText, subheadingTex
             logoResponse = await axios.get(googleFaviconUrl, { responseType: 'arraybuffer', timeout: 10000 });
             rawBuffer = Buffer.from(logoResponse.data);
             rawContentType = (logoResponse.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
-            console.log(`    [VisualOverlay] Î“Â£Ã  Successfully converted ICO to ${rawContentType}`);
+            console.log(`    [VisualOverlay] G£à Successfully converted ICO to ${rawContentType}`);
           } catch (e) {
-            console.warn(`    [VisualOverlay] Î“ÃœÃ¡âˆ©â••Ã… Failed to fetch PNG equivalent for ICO: ${e.message}`);
+            console.warn(`    [VisualOverlay] GÜán+Å Failed to fetch PNG equivalent for ICO: ${e.message}`);
           }
         }
 
         if (rawBuffer.byteLength >= 100) {
-          // Strategy 1: sharp direct conversion Î“Ã¥Ã† always outputs PNG (Gemini-supported)
+          // Strategy 1: sharp direct conversion GåÆ always outputs PNG (Gemini-supported)
           try {
             const pngBuffer = await sharp(rawBuffer).png().toBuffer();
             logoBase64 = pngBuffer.toString('base64');
             logoMime = 'image/png';
-            console.log(`    [VisualOverlay] â‰¡Æ’Ã»â•  Logo converted to PNG via sharp: ${pngBuffer.byteLength} bytes`);
+            console.log(`    [VisualOverlay] =ƒû+  Logo converted to PNG via sharp: ${pngBuffer.byteLength} bytes`);
           } catch (sharpErr) {
-            // Strategy 2: sharp with failOn:none Î“Ã‡Ã¶ handles partially corrupt files
+            // Strategy 2: sharp with failOn:none GÇö handles partially corrupt files
             try {
               const pngBuffer = await sharp(rawBuffer, { failOn: 'none' })
                 .resize({ width: 400, withoutEnlargement: true })
@@ -568,24 +568,24 @@ const applyVisualOverlays = async (imageUrl, logoUrl, headingText, subheadingTex
                 .toBuffer();
               logoBase64 = pngBuffer.toString('base64');
               logoMime = 'image/png';
-              console.log(`    [VisualOverlay] â‰¡Æ’Ã»â•  Logo converted via resize fallback: ${pngBuffer.byteLength} bytes`);
+              console.log(`    [VisualOverlay] =ƒû+  Logo converted via resize fallback: ${pngBuffer.byteLength} bytes`);
             } catch (resizeErr) {
               // Strategy 3: Only send raw if Gemini natively supports the format
               if (GEMINI_SUPPORTED_MIMES.includes(rawContentType)) {
                 logoBase64 = rawBuffer.toString('base64');
                 logoMime = rawContentType;
-                console.log(`    [VisualOverlay] â‰¡Æ’Ã»â•  Logo sent as raw ${rawContentType}: ${rawBuffer.byteLength} bytes`);
+                console.log(`    [VisualOverlay] =ƒû+  Logo sent as raw ${rawContentType}: ${rawBuffer.byteLength} bytes`);
               } else {
-                // ICO, BMP, SVG, TIFF etc Î“Ã‡Ã¶ Gemini rejects these, skip logo entirely
-                console.warn(`    [VisualOverlay] Î“ÃœÃ¡âˆ©â••Ã…  Logo format "${rawContentType}" is not supported by Gemini Î“Ã‡Ã¶ skipping logo, text overlay will still apply.`);
+                // ICO, BMP, SVG, TIFF etc GÇö Gemini rejects these, skip logo entirely
+                console.warn(`    [VisualOverlay] GÜán+Å  Logo format "${rawContentType}" is not supported by Gemini GÇö skipping logo, text overlay will still apply.`);
               }
             }
           }
         } else {
-          console.warn('    [VisualOverlay] Î“ÃœÃ¡âˆ©â••Ã…  Logo downloaded but appears empty Î“Ã‡Ã¶ skipping logo.');
+          console.warn('    [VisualOverlay] GÜán+Å  Logo downloaded but appears empty GÇö skipping logo.');
         }
       } catch (e) {
-        console.warn(`    [VisualOverlay] Î“ÃœÃ¡âˆ©â••Ã…  Logo download failed (${e.message}), continuing with text only.`);
+        console.warn(`    [VisualOverlay] GÜán+Å  Logo download failed (${e.message}), continuing with text only.`);
       }
     }
 
@@ -593,7 +593,7 @@ const applyVisualOverlays = async (imageUrl, logoUrl, headingText, subheadingTex
 
 
     // 3. Use Gemini Flash image editing to composite
-    //    IMPORTANT: use 'global' location Î“Ã‡Ã¶ same as generateImageFromPrompt uses;
+    //    IMPORTANT: use 'global' location GÇö same as generateImageFromPrompt uses;
     //    sending to a regional endpoint that doesn't host the model causes INVALID_ARGUMENT.
     const client = new GoogleGenAI({
       vertexai: true,
@@ -667,7 +667,7 @@ ${logoBase64 ? '6' : '3'}. Choose a contrasting color (e.g., white text on dark 
         const isQuotaError = err.status === 429 || err.message?.includes('429') || err.message?.includes('RESOURCE_EXHAUSTED') || err.message?.includes('quota');
         if (retryCount < maxRetries && isQuotaError) {
           retryCount++;
-          console.warn(`    [VisualOverlay] Î“ÃœÃ¡âˆ©â••Ã…  Quota hit (429). Retrying ${retryCount}/${maxRetries} after ${retryCount * 4}s...`);
+          console.warn(`    [VisualOverlay] GÜán+Å  Quota hit (429). Retrying ${retryCount}/${maxRetries} after ${retryCount * 4}s...`);
           await new Promise(r => setTimeout(r, retryCount * 4000));
         } else {
           throw err;
@@ -690,7 +690,7 @@ ${logoBase64 ? '6' : '3'}. Choose a contrasting color (e.g., white text on dark 
     }
 
     if (!resultBase64) {
-      console.warn('    [VisualOverlay] Î“ÃœÃ¡âˆ©â••Ã…  Gemini returned no image Î“Ã‡Ã¶ falling back to original.');
+      console.warn('    [VisualOverlay] GÜán+Å  Gemini returned no image GÇö falling back to original.');
       return imageUrl;
     }
 
@@ -703,52 +703,52 @@ ${logoBase64 ? '6' : '3'}. Choose a contrasting color (e.g., white text on dark 
     });
 
     if (!gcsResult?.publicUrl) {
-      console.warn('    [VisualOverlay] Î“ÃœÃ¡âˆ©â••Ã…  GCS upload failed Î“Ã‡Ã¶ falling back to original.');
+      console.warn('    [VisualOverlay] GÜán+Å  GCS upload failed GÇö falling back to original.');
       return imageUrl;
     }
 
-    console.log(`    [VisualOverlay] Î“Â£Ã  Overlays composited in ${Date.now() - overlayStart}ms Î“Ã¥Ã† ${gcsResult.publicUrl.substring(0, 60)}...`);
+    console.log(`    [VisualOverlay] G£à Overlays composited in ${Date.now() - overlayStart}ms GåÆ ${gcsResult.publicUrl.substring(0, 60)}...`);
     return gcsResult.publicUrl;
 
   } catch (err) {
-    console.error(`    [VisualOverlay] Î“Â¥Ã® Overlay failed (${err.message}) Î“Ã‡Ã¶ using original image.`);
+    console.error(`    [VisualOverlay] G¥î Overlay failed (${err.message}) GÇö using original image.`);
     return imageUrl;
   }
 };
 
 /**
- * AI ADS AGENT Î“Ã‡Ã¶ VISUAL POST GENERATION PIPELINE
- * Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡
- * Step 1   Î“Ã¶Ã© GPT-4    Î“Ã¥Ã† Brand-aware Imagen prompt engineering
- * Step 2   Î“Ã¶Ã© Vertex AI Imagen 3/4 Î“Ã¥Ã† High-quality visual render
- * Step 2.5 Î“Ã¶Ã© Gemini 2.5 Flash Î“Ã¥Ã† Brand logo overlay (top-left)
- * Step 3   Î“Ã¶Ã© GCS      Î“Ã¥Ã† Secure cloud storage
- * Step 4   Î“Ã¶Ã© MongoDB  Î“Ã¥Ã† GeneratedAsset + Job update
- * Step 5   Î“Ã¶Ã© Calendar Î“Ã¥Ã† Entry status marked "generated"
+ * AI ADS AGENT GÇö VISUAL POST GENERATION PIPELINE
+ * GöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇ
+ * Step 1   Göé GPT-4    GåÆ Brand-aware Imagen prompt engineering
+ * Step 2   Göé Vertex AI Imagen 3/4 GåÆ High-quality visual render
+ * Step 2.5 Göé Gemini 2.5 Flash GåÆ Brand logo overlay (top-left)
+ * Step 3   Göé GCS      GåÆ Secure cloud storage
+ * Step 4   Göé MongoDB  GåÆ GeneratedAsset + Job update
+ * Step 5   Göé Calendar GåÆ Entry status marked "generated"
  */
 export const generateVisualPostForEntry = async (workspaceId, entryId, jobId, modelId = 'imagen-3.0-generate-001', postFormat = 'single', aspectRatio = '1:1', carouselCount = 3) => {
   const pipelineStart = Date.now();
 
-  console.log('\n' + 'Î“Ã²Ã‰'.repeat(60));
-  console.log('â‰¡Æ’Ã„Â¿  AI ADS AGENT Î“Ã‡Ã¶ VISUAL POST PIPELINE STARTED');
-  console.log('Î“Ã²Ã‰'.repeat(60));
-  console.log(`  â‰¡Æ’Ã´Ã¯ Entry ID    : ${entryId}`);
-  console.log(`  â‰¡Æ’Ã…Ã³ Workspace   : ${workspaceId}`);
-  console.log(`  â‰¡Æ’Ã¶Âº Job ID      : ${jobId}`);
-  console.log(`  â‰¡Æ’Ã±Ã» Model       : ${modelId}`);
-  console.log(`  â‰¡Æ’Ã»â•âˆ©â••Ã…  Format      : ${postFormat.toUpperCase()}`);
-  console.log(`  Î“Ã…â–’  Started at  : ${new Date().toISOString()}`);
-  console.log('Î“Ã¶Ã‡'.repeat(60));
+  console.log('\n' + 'GòÉ'.repeat(60));
+  console.log('=ƒÄ¿  AI ADS AGENT GÇö VISUAL POST PIPELINE STARTED');
+  console.log('GòÉ'.repeat(60));
+  console.log(`  =ƒôï Entry ID    : ${entryId}`);
+  console.log(`  =ƒÅó Workspace   : ${workspaceId}`);
+  console.log(`  =ƒöº Job ID      : ${jobId}`);
+  console.log(`  =ƒñû Model       : ${modelId}`);
+  console.log(`  =ƒû+n+Å  Format      : ${postFormat.toUpperCase()}`);
+  console.log(`  GÅ¦  Started at  : ${new Date().toISOString()}`);
+  console.log('GöÇ'.repeat(60));
 
-  // Î“Ã¶Ã‡Î“Ã¶Ã‡ LOAD: Brand Profile & Calendar Entry Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡
-  console.log('\n[Step 0/5] â‰¡Æ’Ã´Ã© Loading Brand Profile & Calendar Entry...');
+  // GöÇGöÇ LOAD: Brand Profile & Calendar Entry GöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇ
+  console.log('\n[Step 0/5] =ƒôé Loading Brand Profile & Calendar Entry...');
   const dataLoadStart = Date.now();
 
   const brand = await BrandProfile.findOne({ workspaceId });
   const entry = await CalendarEntry.findById(entryId);
 
   if (!brand || !entry) {
-    console.error(`[VisualPost] Î“Â¥Ã® ABORT Î“Ã‡Ã¶ Data missing: brand=${!!brand}, entry=${!!entry}`);
+    console.error(`[VisualPost] G¥î ABORT GÇö Data missing: brand=${!!brand}, entry=${!!entry}`);
     throw new Error('Brand or CalendarEntry not found');
   }
 
@@ -768,20 +768,20 @@ export const generateVisualPostForEntry = async (workspaceId, entryId, jobId, mo
     if (raw.includes('carousel') || raw.includes('slide'))  return 'carousel';
     if (raw.includes('reel'))                               return 'reel';
     if (raw.includes('video') || raw.includes('short') || raw.includes('shorts')) return 'video';
-    // Everything else (image, informative, promotional, educational, awareness, etc.) Î“Ã¥Ã† image
+    // Everything else (image, informative, promotional, educational, awareness, etc.) GåÆ image
     return 'image';
   };
   const postType = normalizeAssetType(rawPostType);
 
-  console.log(`    Î“Â£Ã  Brand        : "${companyName}"`);
-  console.log(`    Î“Â£Ã  Post title   : "${title}"`);
-  console.log(`    Î“Â£Ã  Platform     : ${platform} | Type: ${postType} | Phase: ${phase}`);
-  console.log(`    Î“Â£Ã  Brand colors : ${brandColors}`);
-  console.log(`    Î“Â£Ã  Tone         : ${tone}`);
-  console.log(`    Î“Ã…â–’  Loaded in ${Date.now() - dataLoadStart}ms`);
+  console.log(`    G£à Brand        : "${companyName}"`);
+  console.log(`    G£à Post title   : "${title}"`);
+  console.log(`    G£à Platform     : ${platform} | Type: ${postType} | Phase: ${phase}`);
+  console.log(`    G£à Brand colors : ${brandColors}`);
+  console.log(`    G£à Tone         : ${tone}`);
+  console.log(`    GÅ¦  Loaded in ${Date.now() - dataLoadStart}ms`);
 
-  // Î“Ã¶Ã‡Î“Ã¶Ã‡ STEP 1: GPT-4 Prompt Engineering Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡
-  console.log(`\n[Step 1/5] â‰¡Æ’ÂºÃ¡ GPT-4 Prompt Engineering (format: ${postFormat})...`);
+  // GöÇGöÇ STEP 1: GPT-4 Prompt Engineering GöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇ
+  console.log(`\n[Step 1/5] =ƒºá GPT-4 Prompt Engineering (format: ${postFormat})...`);
   const promptStart = Date.now();
 
   const isCarousel = postFormat === 'carousel';
@@ -790,19 +790,19 @@ export const generateVisualPostForEntry = async (workspaceId, entryId, jobId, mo
   if (isCarousel) {
     slideStructure = '- Slide 1: Bold, attention-grabbing opening visual representing the hook\n';
     if (carouselCount === 2) {
-      slideStructure += '- Slide 2: CTA-driven closing Î“Ã‡Ã¶ inspiring action with brand energy';
+      slideStructure += '- Slide 2: CTA-driven closing GÇö inspiring action with brand energy';
     } else if (carouselCount === 3) {
-      slideStructure += '- Slide 2: Solution / product in context Î“Ã‡Ã¶ aspirational lifestyle\n';
-      slideStructure += '- Slide 3: CTA-driven closing Î“Ã‡Ã¶ inspiring action with brand energy';
+      slideStructure += '- Slide 2: Solution / product in context GÇö aspirational lifestyle\n';
+      slideStructure += '- Slide 3: CTA-driven closing GÇö inspiring action with brand energy';
     } else if (carouselCount === 4) {
-      slideStructure += '- Slide 2: Problem visualization Î“Ã‡Ã¶ what challenge the audience faces\n';
-      slideStructure += '- Slide 3: Solution / product in context Î“Ã‡Ã¶ aspirational lifestyle\n';
-      slideStructure += '- Slide 4: CTA-driven closing Î“Ã‡Ã¶ inspiring action with brand energy';
+      slideStructure += '- Slide 2: Problem visualization GÇö what challenge the audience faces\n';
+      slideStructure += '- Slide 3: Solution / product in context GÇö aspirational lifestyle\n';
+      slideStructure += '- Slide 4: CTA-driven closing GÇö inspiring action with brand energy';
     } else {
-      slideStructure += '- Slide 2: Problem visualization Î“Ã‡Ã¶ what challenge the audience faces\n';
-      slideStructure += '- Slide 3: Solution / product in context Î“Ã‡Ã¶ aspirational lifestyle\n';
-      slideStructure += '- Slide 4: Key benefit or proof point Î“Ã‡Ã¶ data, result, transformation\n';
-      slideStructure += '- Slide 5: CTA-driven closing Î“Ã‡Ã¶ inspiring action with brand energy';
+      slideStructure += '- Slide 2: Problem visualization GÇö what challenge the audience faces\n';
+      slideStructure += '- Slide 3: Solution / product in context GÇö aspirational lifestyle\n';
+      slideStructure += '- Slide 4: Key benefit or proof point GÇö data, result, transformation\n';
+      slideStructure += '- Slide 5: CTA-driven closing GÇö inspiring action with brand energy';
     }
   }
 
@@ -858,32 +858,32 @@ Requirements for the Imagen prompt:
 
 Output ONLY the raw Imagen prompt text, nothing else. No JSON, no explanation.`;
 
-  console.log(`    â‰¡Æ’Ã´Ã± Sending context to GPT-4 (${promptEngineeringRequest.length} chars)...`);
+  console.log(`    =ƒôñ Sending context to GPT-4 (${promptEngineeringRequest.length} chars)...`);
 
   const imagenPrompt = await AskOpenAIRaw(promptEngineeringRequest, null, {
     systemInstruction: 'You are an AI image prompt engineer. Output only the image generation prompt text.'
   });
 
   if (!imagenPrompt || imagenPrompt.trim().length < 20) {
-    console.error('[VisualPost] Î“Â¥Ã® GPT-4 returned empty/invalid prompt');
+    console.error('[VisualPost] G¥î GPT-4 returned empty/invalid prompt');
     throw new Error('GPT-4 returned an empty image prompt');
   }
 
   const trimmedPrompt = imagenPrompt.trim();
-  console.log(`    Î“Â£Ã  Prompt received (${trimmedPrompt.length} chars) in ${Date.now() - promptStart}ms`);
+  console.log(`    G£à Prompt received (${trimmedPrompt.length} chars) in ${Date.now() - promptStart}ms`);
   
   let finalImagePrompt = trimmedPrompt;
   let carouselSlides = [];
 
   if (isCarousel) {
-    console.log(`    â‰¡Æ’Ã´Ã¦ Carousel mode Î“Ã‡Ã¶ Parsing ${carouselCount} slide prompts...`);
+    console.log(`    =ƒôæ Carousel mode GÇö Parsing ${carouselCount} slide prompts...`);
     // Split by markers like "1. ", "2. ", or simply double newlines if markers aren't perfectly followed
     const slideMatches = trimmedPrompt.split(/\n?\d+\.\s*/).filter(s => s.trim().length > 10);
     
     // Take exactly carouselCount or whatever we have
     const slidePrompts = slideMatches.slice(0, carouselCount);
     if (slidePrompts.length < carouselCount) {
-       console.warn(`    Î“ÃœÃ¡âˆ©â••Ã…  Only parsed ${slidePrompts.length}/${carouselCount} slides. Attempting line-split fallback.`);
+       console.warn(`    GÜán+Å  Only parsed ${slidePrompts.length}/${carouselCount} slides. Attempting line-split fallback.`);
        // Minimal fallback if the numbering was weird
        const fallback = trimmedPrompt.split('\n').filter(l => l.trim().length > 30).slice(0, carouselCount);
        if (fallback.length > slidePrompts.length) carouselSlides = fallback;
@@ -894,15 +894,15 @@ Output ONLY the raw Imagen prompt text, nothing else. No JSON, no explanation.`;
     
     // Use the first slide as the representitive "cover" prompt for legacy single-image fields
     finalImagePrompt = carouselSlides[0] || trimmedPrompt;
-    console.log(`    Î“Â£Ã  Successfully parsed ${carouselSlides.length} slides.`);
+    console.log(`    G£à Successfully parsed ${carouselSlides.length} slides.`);
   }
 
-  // Î“Ã¶Ã‡Î“Ã¶Ã‡ STEP 2: Vertex AI Imagen Generation Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡
-  console.log(`\n[Step 2/5] â‰¡Æ’Ã»â•  Vertex AI Imagen Generation (Format: ${postFormat})...`);
+  // GöÇGöÇ STEP 2: Vertex AI Imagen Generation GöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇ
+  console.log(`\n[Step 2/5] =ƒû+  Vertex AI Imagen Generation (Format: ${postFormat})...`);
   const imagenStart = Date.now();
 
   const selectedModel = modelId || 'imagen-3.0-generate-001';
-  console.log(`    â‰¡Æ’Ã±Ã» Calling model: ${selectedModel}`);
+  console.log(`    =ƒñû Calling model: ${selectedModel}`);
   
   let imageUrl = '';
   let generatedSlides = [];
@@ -915,7 +915,7 @@ Output ONLY the raw Imagen prompt text, nothing else. No JSON, no explanation.`;
     { role: 'Problem',  prefix: 'The Real Problem: ', suffix: '' },
     { role: 'Solution', prefix: 'The Fix: ',          suffix: '' },
     { role: 'Proof',    prefix: 'Why It Works: ',     suffix: '' },
-    { role: 'CTA',      prefix: '',                   suffix: ' Î“Ã‡Ã¶ Act Now' },
+    { role: 'CTA',      prefix: '',                   suffix: ' GÇö Act Now' },
   ];
   const buildLocalVariations = (count) => {
     return Array.from({ length: count }, (_, i) => {
@@ -928,7 +928,7 @@ Output ONLY the raw Imagen prompt text, nothing else. No JSON, no explanation.`;
   };
 
   if (isCarousel && carouselSlides.length > 0) {
-    console.log(`    Î“ÃœÃ­ Staggered Rendering ${carouselSlides.length} slides (1.2s apart to manage quota)...`);
+    console.log(`    GÜí Staggered Rendering ${carouselSlides.length} slides (1.2s apart to manage quota)...`);
 
     // Generate unique text variations per slide via Vertex AI
     const variationsPrompt = `You are a professional social media copywriter creating a ${carouselCount}-slide carousel post.
@@ -941,8 +941,8 @@ ${slideStructure}
 (Adjust the flow if fewer slides)
 
 Rules:
-- Each "heading" must be DIFFERENT from the others Î“Ã‡Ã¶ no repetition
-- Keep headings under 8 words Î“Ã‡Ã¶ punchy, bold, suitable for image overlay
+- Each "heading" must be DIFFERENT from the others GÇö no repetition
+- Keep headings under 8 words GÇö punchy, bold, suitable for image overlay
 - Keep subheadings under 15 words
 
 Output ONLY a raw JSON array (no markdown, no explanation) like this:
@@ -952,7 +952,7 @@ Output ONLY a raw JSON array (no markdown, no explanation) like this:
 ]`;
 
     try {
-      console.log(`    â‰¡Æ’ÂºÃ¡ Generating unique text variations for ${carouselSlides.length} slides via Vertex AI...`);
+      console.log(`    =ƒºá Generating unique text variations for ${carouselSlides.length} slides via Vertex AI...`);
       const varsRes = await AskVertexRaw(variationsPrompt, { temperature: 0.85 });
       let parsed = safeParse(varsRes);
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
@@ -963,10 +963,10 @@ Output ONLY a raw JSON array (no markdown, no explanation) like this:
       slideTexts = Array.isArray(parsed) && parsed.length >= carouselSlides.length
         ? parsed
         : buildLocalVariations(carouselSlides.length);
-      console.log(`    Î“Â£Ã  Slide text variations ready (${slideTexts.length} slides):`);
+      console.log(`    G£à Slide text variations ready (${slideTexts.length} slides):`);
       slideTexts.forEach((s, i) => console.log(`       Slide ${i+1}: "${s.heading}" / "${s.subheading}"`) );
     } catch(e) {
-      console.warn(`    Î“ÃœÃ¡âˆ©â••Ã… Vertex variation call failed (${e.message}) Î“Ã‡Ã¶ using smart local fallback.`);
+      console.warn(`    GÜán+Å Vertex variation call failed (${e.message}) GÇö using smart local fallback.`);
       slideTexts = buildLocalVariations(carouselSlides.length);
     }
 
@@ -977,7 +977,7 @@ Output ONLY a raw JSON array (no markdown, no explanation) like this:
       try {
         const rawSlideUrl = await generateImageFromPrompt(p, null, aspectRatio, selectedModel);
         if (rawSlideUrl) {
-          // Î“Ã¶Ã‡Î“Ã¶Ã‡ STEP 2.5: Apply brand logo and text overlay to each slide Î“Ã¶Ã‡Î“Ã¶Ã‡
+          // GöÇGöÇ STEP 2.5: Apply brand logo and text overlay to each slide GöÇGöÇ
           const slideHeading = slideTexts[i]?.heading || title;
           const slideSubheading = slideTexts[i]?.subheading || hook;
           const brandedSlideUrl = await applyVisualOverlays(rawSlideUrl, brand.logoUrl, slideHeading, slideSubheading, aspectRatio);
@@ -986,10 +986,10 @@ Output ONLY a raw JSON array (no markdown, no explanation) like this:
           // --- UPDATE JOB PROGRESS FOR FRONTEND POLL ---
           await GenerationJob.findByIdAndUpdate(jobId, { completedCount: i + 1 }).catch(() => {});
         } else {
-          console.warn(`       Î“ÃœÃ¡âˆ©â••Ã…  Slide ${i+1} returned empty URL`);
+          console.warn(`       GÜán+Å  Slide ${i+1} returned empty URL`);
         }
       } catch (err) {
-        console.error(`       Î“Â¥Ã® Slide ${i+1} failed: ${err.message}`);
+        console.error(`       G¥î Slide ${i+1} failed: ${err.message}`);
       }
       // Wait 1.2s between slides to avoid rate limiting (except after last slide)
       if (i < carouselSlides.length - 1) {
@@ -997,27 +997,27 @@ Output ONLY a raw JSON array (no markdown, no explanation) like this:
       }
     }
     imageUrl = generatedSlides[0] || '';
-    console.log(`    Î“Â£Ã  ${generatedSlides.length}/${carouselSlides.length} slides rendered successfully.`);
+    console.log(`    G£à ${generatedSlides.length}/${carouselSlides.length} slides rendered successfully.`);
   } else {
     // Single image generation
-    console.log(`    â‰¡Æ’Ã´Ã‰ Aspect ratio : ${aspectRatio}`);
+    console.log(`    =ƒôÉ Aspect ratio : ${aspectRatio}`);
     const rawImageUrl = await generateImageFromPrompt(finalImagePrompt, null, aspectRatio, selectedModel);
-    // Î“Ã¶Ã‡Î“Ã¶Ã‡ STEP 2.5: Apply visual overlays (logo + text) Î“Ã¶Ã‡Î“Ã¶Ã‡
+    // GöÇGöÇ STEP 2.5: Apply visual overlays (logo + text) GöÇGöÇ
     imageUrl = await applyVisualOverlays(rawImageUrl, brand.logoUrl, title, hook, aspectRatio);
   }
 
   if (!imageUrl && generatedSlides.length === 0) {
-    console.error('[VisualPost] Î“Â¥Ã® Vertex AI returned no image URL');
+    console.error('[VisualPost] G¥î Vertex AI returned no image URL');
     throw new Error('Vertex AI Imagen returned no image URL');
   }
 
   const imagenMs = Date.now() - imagenStart;
-  console.log(`    Î“Â£Ã  Generation cycle complete in ${imagenMs}ms`);
-  console.log(`    â‰¡Æ’Ã…â•–âˆ©â••Ã…  Logo overlay : ${brand.logoUrl ? 'Applied' : 'Skipped (no logo)'}`);
-  console.log(`    â‰¡Æ’Ã´Ã‰ Final images  : ${isCarousel ? generatedSlides.length + ' slides' : '1 single image'}`);
+  console.log(`    G£à Generation cycle complete in ${imagenMs}ms`);
+  console.log(`    =ƒÅ+n+Å  Logo overlay : ${brand.logoUrl ? 'Applied' : 'Skipped (no logo)'}`);
+  console.log(`    =ƒôÉ Final images  : ${isCarousel ? generatedSlides.length + ' slides' : '1 single image'}`);
 
-  // Î“Ã¶Ã‡Î“Ã¶Ã‡ STEP 3: Save GeneratedAsset to DB Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡
-  console.log('\n[Step 3/5] â‰¡Æ’Ã†â•› Saving GeneratedAsset to MongoDB...');
+  // GöÇGöÇ STEP 3: Save GeneratedAsset to DB GöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇ
+  console.log('\n[Step 3/5] =ƒÆ+ Saving GeneratedAsset to MongoDB...');
   const assetStart = Date.now();
 
   const assetName = `visual_${title.replace(/\s+/g, '_').substring(0, 30)}_${Date.now()}.png`;
@@ -1045,39 +1045,39 @@ Output ONLY a raw JSON array (no markdown, no explanation) like this:
     }
   });
 
-  console.log(`    Î“Â£Ã  GeneratedAsset saved: ${asset._id}`);
-  console.log(`    â‰¡Æ’Ã´Ã¼ Asset name   : ${assetName} | Slides: ${generatedSlides.length}`);
-  console.log(`    Î“Ã…â–’  Saved in ${Date.now() - assetStart}ms`);
+  console.log(`    G£à GeneratedAsset saved: ${asset._id}`);
+  console.log(`    =ƒôü Asset name   : ${assetName} | Slides: ${generatedSlides.length}`);
+  console.log(`    GÅ¦  Saved in ${Date.now() - assetStart}ms`);
 
-  // Î“Ã¶Ã‡Î“Ã¶Ã‡ STEP 4: Mark GenerationJob as Completed Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡
-  console.log('\n[Step 4/5] â‰¡Æ’Ã¶Ã¤ Updating GenerationJob status...');
+  // GöÇGöÇ STEP 4: Mark GenerationJob as Completed GöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇ
+  console.log('\n[Step 4/5] =ƒöä Updating GenerationJob status...');
   await GenerationJob.findByIdAndUpdate(jobId, {
     status: 'completed',
     completedAt: new Date(),
     completedCount: 1,
     resultAssetId: asset._id,
   });
-  console.log(`    Î“Â£Ã  Job ${jobId} Î“Ã¥Ã† status: "completed"`);
+  console.log(`    G£à Job ${jobId} GåÆ status: "completed"`);
 
-  // Î“Ã¶Ã‡Î“Ã¶Ã‡ STEP 5: Mark CalendarEntry Î“Ã‡Ã¶ LEAVE STATUS UNCHANGED FOR ISOLATION Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡
-  console.log('\n[Step 5/5] â‰¡Æ’Ã´Ã  Keeping CalendarEntry status isolated...');
+  // GöÇGöÇ STEP 5: Mark CalendarEntry GÇö LEAVE STATUS UNCHANGED FOR ISOLATION GöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇ
+  console.log('\n[Step 5/5] =ƒôà Keeping CalendarEntry status isolated...');
   // entry.status = 'generated'; // Visual generation should not mark content as generated
   // await entry.save();
-  console.log(`    Î“Â£Ã  Entry ${entryId} status preserved for content generation isolation`);
+  console.log(`    G£à Entry ${entryId} status preserved for content generation isolation`);
 
-  // Î“Ã¶Ã‡Î“Ã¶Ã‡ PIPELINE COMPLETE Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡Î“Ã¶Ã‡
+  // GöÇGöÇ PIPELINE COMPLETE GöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇGöÇ
   const totalMs = Date.now() - pipelineStart;
   const totalSec = (totalMs / 1000).toFixed(1);
-  console.log('\n' + 'Î“Ã²Ã‰'.repeat(60));
-  console.log('Î“Â£Ã   AI ADS AGENT Î“Ã‡Ã¶ PIPELINE COMPLETE');
-  console.log('Î“Ã²Ã‰'.repeat(60));
-  console.log(`  â‰¡Æ’Ã¥Ã¶ Asset ID     : ${asset._id}`);
-  console.log(`  â‰¡Æ’Ã±Ã» Model used   : ${selectedModel}`);
-  console.log(`  Î“Ã…â–’  Total time   : ${totalSec}s (${totalMs}ms)`);
-  console.log(`  â‰¡Æ’Ã¶Ã¹ Image URL    : ${imageUrl.substring(0, 80)}...`);
-  console.log('Î“Ã²Ã‰'.repeat(60) + '\n');
+  console.log('\n' + 'GòÉ'.repeat(60));
+  console.log('G£à  AI ADS AGENT GÇö PIPELINE COMPLETE');
+  console.log('GòÉ'.repeat(60));
+  console.log(`  =ƒåö Asset ID     : ${asset._id}`);
+  console.log(`  =ƒñû Model used   : ${selectedModel}`);
+  console.log(`  GÅ¦  Total time   : ${totalSec}s (${totalMs}ms)`);
+  console.log(`  =ƒöù Image URL    : ${imageUrl.substring(0, 80)}...`);
+  console.log('GòÉ'.repeat(60) + '\n');
 
-  logger.info(`[VisualPost] Î“Â£Ã  Pipeline complete in ${totalSec}s | AssetID=${asset._id} | Model=${selectedModel}`);
+  logger.info(`[VisualPost] G£à Pipeline complete in ${totalSec}s | AssetID=${asset._id} | Model=${selectedModel}`);
   return asset;
 };
 

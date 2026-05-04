@@ -20,21 +20,21 @@ export const askOpenAI = async (prompt, context = null, options = {}) => {
         const currentDate = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'full', timeStyle: 'short' });
         const dateContext = `\n### CURRENT DATE & TIME:\nToday is ${currentDate} (India Standard Time). (Aaj ki date aur samay: ${currentDate})\n`;
 
+        let finalSystemContent = "";
         if (systemInstruction) {
-            messages.push({ role: 'system', content: systemInstruction + dateContext });
+            finalSystemContent = systemInstruction + dateContext;
         } else {
-            messages.push({
-                role: 'system',
-                content: configService.getFullSystemInstruction() + dateContext + `
+            finalSystemContent = configService.getFullSystemInstruction() + dateContext + `
 ### PERSONALIZATION:
 Understand the user's expertise level and topic preference implicitly from their messages. Adjust your language to be slightly more technical or simple as needed, while maintaining the primary goal of being direct and professional.
-`
-            });
+`;
         }
 
+        if (userName) {
+            finalSystemContent += `\n\n### USER IDENTIFICATION:\nThe user's name is ${userName}. You MUST use their name to address them directly and naturally in your responses (e.g., "Yes, Sakshi", or "Here is the information, ${userName}"). Make the conversation feel personalized by acknowledging their name.\n`;
+        }
 
-
-
+        messages.push({ role: 'system', content: finalSystemContent });
         // 2. Add Context if provided
         let finalPrompt = prompt;
         if (context) {

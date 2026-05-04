@@ -442,7 +442,22 @@ Maintain any text response outside the JSON block.`;
                     });
                 } else if (currentModel && (currentModel.includes('groq') || currentModel.includes('llama'))) {
                     logger.info(`[AI-Service] Routing to Groq (${currentModel})`);
-                    aiResponse = await groqService.askGroq(promptWithMemory, null);
+                    
+                    let langContext = "";
+                    if (userLanguage === 'Hindi' || userLanguage === 'Devanagari') {
+                        langContext = "MANDATORY: Respond ENTIRELY in formal Hindi (Devanagari script). Use 'Simple Hindi + English term in brackets' for technical legal concepts (e.g., 'अनुबंध (Contract)', 'शपथ पत्र (Affidavit)').";
+                    } else if (userLanguage === 'Hinglish') {
+                        langContext = "MANDATORY: Respond in conversational but accurate Hinglish. Maintain legal precision (e.g., 'Aapka contract void hai because isme consideration missing hai').";
+                    } else {
+                        langContext = `MANDATORY: Respond in professional English. Match the script and tongue of the user. (Target: ${userLanguage})`;
+                    }
+
+                    const finalSystemInstruction = `${dynamicSystemInstruction}\n\n${langSwitchRule}\n\n### LANGUAGE RULE: ${langContext}\n\n${legalInstruction}`;
+                    
+                    aiResponse = await groqService.askGroq(promptWithMemory, null, {
+                        systemInstruction: finalSystemInstruction,
+                        userName
+                    });
                 } else {
                     // Default to Vertex AI (Gemini)
                     const lowerMsg = message.toLowerCase().trim();
@@ -627,7 +642,7 @@ INPUT CONTEXT:
         const response = await vertexService.AskVertexRaw(prompt, {
             maxOutputTokens: 200,
             temperature: 0.8,
-            modelOverride: 'gemini-2.5-flash'
+            modelOverride: 'gemini-1.5-flash'
         });
 
         const parsed = safeParseLLMJson(response, { suggestions: [] });
@@ -663,7 +678,7 @@ Title:`;
         const title = await vertexService.AskVertexRaw(fullPrompt, {
             maxOutputTokens: 50,
             temperature: 0.1,
-            modelOverride: 'gemini-2.5-flash'
+            modelOverride: 'gemini-1.5-flash'
         });
 
         // Log raw response

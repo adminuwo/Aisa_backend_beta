@@ -8,7 +8,7 @@ class GroqService {
         this.baseUrl = 'https://api.groq.com/openai/v1/chat/completions';
     }
 
-    async askGroq(prompt, context = null) {
+    async askGroq(prompt, context = null, options = {}) {
         // Enhanced API key validation
         if (!this.apiKey) {
             logger.error("GROQ_API_KEY is not set in environment variables");
@@ -21,7 +21,7 @@ class GroqService {
         const messages = [];
 
         // Hybrid System Prompt
-        const systemPrompt = `${AISA_CONVERSATIONAL_RULES}
+        let systemPrompt = options.systemInstruction || `${AISA_CONVERSATIONAL_RULES}
 ${BRAND_SYSTEM_RULES}
 
 ### CONTEXTUAL INSTRUCTIONS:
@@ -32,6 +32,10 @@ ${BRAND_SYSTEM_RULES}
    - Answer the question using this user context.
 4. If NO Context is provided (or it's empty):
    - Answer using general knowledge.`;
+
+        if (options.userName) {
+            systemPrompt += `\n\n### USER IDENTIFICATION:\nThe user's name is ${options.userName}. You MUST use their name to address them directly and naturally in your responses (e.g., "Yes, Sakshi", or "Here is the information, ${options.userName}"). Make the conversation feel personalized by acknowledging their name.\n`;
+        }
 
         messages.push({
             role: "system",

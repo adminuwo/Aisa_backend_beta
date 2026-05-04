@@ -37,7 +37,7 @@ const findOrCreateCorpus = async () => {
 
     try {
         const projectId = process.env.GCP_PROJECT_ID;
-        const location = process.env.GCP_LOCATION || 'us-central1';
+        const location = 'asia-south1';
 
         if (!projectId) {
             logger.error("[Vertex RAG] GCP_PROJECT_ID not set in environment.");
@@ -342,7 +342,7 @@ export const AskVertexRaw = async (prompt, options = {}) => {
             });
         } catch (execErr) {
             if (execErr.message.includes("404") || execErr.message.includes("NOT_FOUND")) {
-                logger.warn(`[AskVertexRaw] Execution failed for ${selectedModelName}. Retrying with gemini-2.5-flash.`);
+                logger.warn(`[AskVertexRaw] Execution failed for ${selectedModelName}. Retrying with gemini-1.5-flash.`);
                 const fallbackModel = genAIInstance.getGenerativeModel({
                     model: 'gemini-2.5-flash',
                     generationConfig: {
@@ -434,7 +434,7 @@ export const askVertex = async (prompt, context = null, options = {}) => {
 
         // Add User Name context if provided
         if (options.userName) {
-            systemInstruction += `\n### USER INFO:\nYou are talking to ${options.userName}. Address them naturally if appropriate.\n`;
+            systemInstruction += `\n### USER IDENTIFICATION:\nThe user's name is ${options.userName}. You MUST use their name to address them directly and naturally in your responses (e.g., "Yes, Sakshi", or "Here is the information, ${options.userName}"). Make the conversation feel personalized by acknowledging their name.\n`;
         }
 
         let finalPrompt = prompt;
@@ -506,10 +506,10 @@ export const askVertex = async (prompt, context = null, options = {}) => {
         try {
             result = await model.generateContent({ contents: [{ role: 'user', parts }] });
         } catch (execErr) {
-            if ((execErr.message.includes("404") || execErr.message.includes("NOT_FOUND")) && selectedModelName !== 'gemini-2.5-flash') {
-                logger.warn(`[VERTEX] Execution failed for ${selectedModelName}. Retrying with gemini-2.5-flash.`);
+            if ((execErr.message.includes("404") || execErr.message.includes("NOT_FOUND")) && selectedModelName !== 'gemini-1.5-flash') {
+                logger.warn(`[VERTEX] Execution failed for ${selectedModelName}. Retrying with gemini-1.5-flash.`);
                 const fallbackModel = genAIInstance.getGenerativeModel({
-                    model: 'gemini-2.5-flash',
+                    model: 'gemini-1.5-flash',
                     systemInstruction: systemInstruction,
                     generationConfig: { maxOutputTokens: 4096 }
                 });

@@ -144,7 +144,7 @@ router.post("/", optionalVerifyToken, identifyGuest, async (req, res) => {
       mode,
       images: image,
       documents: filteredDocuments,
-      userName: req.user?.name,
+      userName: req.user?.name ? req.user.name.split(' ')[0] : undefined,
       language,
       conversationId: sessionId,
       userId: req.user?.id || req.user?._id,
@@ -184,7 +184,7 @@ router.post("/", optionalVerifyToken, identifyGuest, async (req, res) => {
                 async (finalPrompt, activeModel) => {
                     return await generateImageFromPrompt(finalPrompt, null, aspectRatio || '1:1', activeModel);
                 },
-                { modelId: reqModelId || 'gemini-2.5-flash-image', enhance: true }
+                { modelId: reqModelId || 'gemini-1.5-flash-image', enhance: true }
             );
             
             if (pipelineResult.url) {
@@ -207,7 +207,7 @@ router.post("/", optionalVerifyToken, identifyGuest, async (req, res) => {
                 async (finalPrompt, activeModel) => {
                     return await generateImageFromPrompt(finalPrompt, sourceImage, aspectRatio || '1:1', activeModel);
                 },
-                { modelId: reqModelId || 'gemini-2.5-flash', enhance: true }
+                { modelId: reqModelId || 'gemini-1.5-flash', enhance: true }
             );
 
             if (pipelineResult.url) {

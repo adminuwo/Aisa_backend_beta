@@ -26,7 +26,7 @@ export const chat = async (req, res, next) => {
         let userName = null;
         if (req.user && req.user.id) {
             const user = await User.findById(req.user.id).select('name');
-            if (user) userName = user.name;
+            if (user && user.name) userName = user.name.split(' ')[0];
         }
 
         // 1. Get AI Response (Pass detailed context)

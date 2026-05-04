@@ -4,7 +4,7 @@ import 'dotenv/config';
 async function testAuth() {
     const projectId = process.env.GCP_PROJECT_ID;
     const location = process.env.GCP_LOCATION || 'us-central1';
-    const model  = 'gemini-2.5-flash';   // ← exact model your app uses
+    const model  = 'gemini-1.5-flash';   // ← exact model your app uses
     
     console.log('━'.repeat(50));
     console.log('Project  :', projectId);
