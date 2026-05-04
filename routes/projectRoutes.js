@@ -11,7 +11,7 @@ const router = express.Router();
 router.post('/', verifyToken, async (req, res) => {
     try {
         const { 
-            name, clientName, caseSummary, keyIssue, importantDates, isLegalCase, 
+            name, clientName, summary, keyIssue, importantDates, isLegalCase, 
             caseType, accused, status, stage, priority, opponentName, lawyers, 
             facts, legalIssues, reliefGoals, intelligence, tasks, communicationLogs, research, hearings
         } = req.body;
@@ -24,7 +24,7 @@ router.post('/', verifyToken, async (req, res) => {
             name,
             userId: req.user.id,
             clientName: clientName || '',
-            caseSummary: caseSummary || '',
+            summary: summary || '',
             caseType: caseType || '',
             status: status || 'Active',
             stage: stage || 'Pre-litigation',
@@ -120,7 +120,7 @@ const performCaseAnalysis = async (req, res) => {
             return res.status(404).json({ error: 'Case not found' });
         }
 
-        const inputText = rawText || project.caseSummary || project.name;
+        const inputText = rawText || project.summary || project.name;
         const aiResponse = await legalIntelligenceService.analyzeCaseDetails(inputText, project);
         
         const aiData = typeof aiResponse === "string" ? JSON.parse(aiResponse) : aiResponse;
@@ -155,7 +155,7 @@ const performCaseAnalysis = async (req, res) => {
         };
 
         const updateData = {
-            caseSummary: normalized.summary || project.caseSummary,
+            summary: normalized.summary || project.summary,
             clientName: project.clientName || toStr(aiData.parties?.plaintiff?.name || aiData.parties?.plaintiff) || '',
             opponentName: project.opponentName || toStr(aiData.parties?.defendant?.name || aiData.parties?.defendant) || '',
             reliefGoals: normalized.relief || project.reliefGoals,

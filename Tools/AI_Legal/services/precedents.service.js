@@ -54,7 +54,7 @@ export const findPrecedents = async (userQuery, caseContext = null, language = '
 const constructSearchQueryFromContext = (context) => {
     const issues = context.legalIssues ? context.legalIssues.join(' ') : '';
     const type = context.caseType || '';
-    const summary = context.caseSummary || '';
+    const summary = context.summary || context.caseSummary || '';
     return `${type} ${issues} ${summary}`.trim();
 };
 
@@ -149,7 +149,7 @@ const processPrecedentWithAI = async (caseData, context = null, language = 'Engl
     Text: ${caseData.text}
     
     ${context ? `CONTEXT OF MY CURRENT CASE:
-    Summary: ${context.caseSummary}
+    Summary: ${context.summary || context.caseSummary}
     Issues: ${context.legalIssues ? context.legalIssues.join(', ') : 'N/A'}` : ''}
 
     REQUIRED JSON FORMAT (STRICT):
@@ -260,7 +260,7 @@ export const analyzePrecedent = async (actionType, precedentData, activeCaseData
 
         MY ACTIVE CASE:
         Type: ${activeCaseData?.caseType || 'N/A'}
-        Facts: ${activeCaseData?.caseSummary || activeCaseData?.facts || 'N/A'}
+        Facts: ${activeCaseData?.summary || activeCaseData?.caseSummary || activeCaseData?.facts || 'N/A'}
         Issues: ${activeCaseData?.legalIssues?.join(', ') || 'N/A'}
 
         STRUCTURE YOUR RESPONSE (SCANNABLE MARKDOWN):
