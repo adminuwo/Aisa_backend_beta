@@ -18,10 +18,15 @@ const projectSchema = new mongoose.Schema({
         trim: true,
         default: ''
     },
-    caseSummary: {
+    summary: {
         type: String,
         trim: true,
         default: ''
+    },
+    // Backward compatibility for existing data
+    caseSummary: {
+        type: String,
+        trim: true
     },
     caseType: {
         type: String,

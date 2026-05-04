@@ -790,6 +790,58 @@ router.post('/duplicate', optionalVerifyToken, identifyGuest, async (req, res) =
   }
 });
 
+// --- MERGE GUEST CHATS ---
+router.post('/merge-chats', verifyToken, async (req, res) => {
+  try {
+    const { guestChatIds } = req.body;
+    const userId = req.user.id || req.user._id;
+
+    console.log(`[MERGE-DEBUG] Incoming request for user: ${userId}`);
+    console.log(`[MERGE-DEBUG] guestChatIds:`, guestChatIds);
+
+    if (!Array.isArray(guestChatIds) || guestChatIds.length === 0) {
+      console.log(`[MERGE-DEBUG] No chats to merge.`);
+      return res.status(200).json({ success: true, message: 'No chats to merge' });
+    }
+
+    // 1. Update sessions in DB
+    const result = await ChatSession.updateMany(
+      { 
+        sessionId: { $in: guestChatIds },
+        $or: [
+          { userId: { $exists: false } },
+          { userId: null }
+        ]
+      },
+      { 
+        $set: { userId: userId, guestId: null } 
+      }
+    );
+
+    console.log(`[MERGE-DEBUG] Modified ${result.modifiedCount} sessions in DB.`);
+
+    // 2. Link sessions to user model
+    const sessions = await ChatSession.find({ sessionId: { $in: guestChatIds }, userId: userId });
+    const sessionObjectIds = sessions.map(s => s._id);
+    
+    if (sessionObjectIds.length > 0) {
+      await userModel.findByIdAndUpdate(userId, { 
+        $addToSet: { chatSessions: { $each: sessionObjectIds } } 
+      });
+      console.log(`[MERGE-DEBUG] Linked ${sessionObjectIds.length} sessions to user profile.`);
+    }
+
+    res.json({ 
+      success: true, 
+      mergedCount: result.modifiedCount,
+      message: `${result.modifiedCount} chats merged successfully`
+    });
+  } catch (err) {
+    console.error('[MERGE-ERROR]', err);
+    res.status(500).json({ error: 'Failed to merge chats', details: err.message });
+  }
+});
+
 // --- GET SHARED SESSION (PUBLIC) ---
 router.get('/share/:shareId', async (req, res) => {
   try {
