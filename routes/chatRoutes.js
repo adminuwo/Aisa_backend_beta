@@ -45,8 +45,24 @@ const checkGuestLimits = async (req, sessionId) => {
   const guest = await Guest.findOne({ guestId });
   if (!guest) return { allowed: true };
 
-  const count = await ChatSession.countDocuments({ guestId });
-  if (count >= 10) return { allowed: false, reason: "GUEST_LIMIT_REACHED" };
+  // 1. Session Count Limit (Max 5 sessions)
+  const sessionCount = await ChatSession.countDocuments({ guestId });
+  
+  // Check if current session exists
+  const sessionExists = await ChatSession.findOne({ sessionId, guestId });
+  
+  // If we're trying to start a 6th session
+  if (!sessionExists && sessionCount >= 5) {
+    return { allowed: false, reason: "GUEST_SESSIONS_EXCEEDED" };
+  }
+
+  // 2. Chat Count Limit per Session (Max 10 user messages)
+  if (sessionExists) {
+    const userMessageCount = sessionExists.messages.filter(m => m.role === 'user').length;
+    if (userMessageCount >= 10) {
+      return { allowed: false, reason: "GUEST_CHATS_EXCEEDED" };
+    }
+  }
 
   return { allowed: true };
 };
@@ -506,6 +522,12 @@ router.post('/:sessionId/message', optionalVerifyToken, identifyGuest, async (re
     const { message, title } = req.body;
     const userId = req.user?.id;
     const guestId = req.guest?.guestId;
+
+    // 1. LIMIT & CREDIT CHECKS FOR GUESTS
+    const limitCheck = await checkGuestLimits(req, sessionId);
+    if (!limitCheck.allowed) {
+      return res.status(403).json({ error: "LIMIT_REACHED", reason: limitCheck.reason });
+    }
 
     if (!message) return res.status(400).json({ error: 'Message is required' });
 

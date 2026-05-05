@@ -37,7 +37,7 @@ const findOrCreateCorpus = async () => {
 
     try {
         const projectId = process.env.GCP_PROJECT_ID;
-        const location = 'asia-south1';
+        const location = 'us-central1';
 
         if (!projectId) {
             logger.error("[Vertex RAG] GCP_PROJECT_ID not set in environment.");

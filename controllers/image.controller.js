@@ -12,7 +12,7 @@ import axios from 'axios';
 // Supported Gemini image models (via @google/genai SDK, location: global)
 // ------------------------------------------------------------------
 const GEMINI_IMAGE_MODELS = [
-    'gemini-1.5-flash-image',
+    'gemini-2.5-flash-image',
     'gemini-3.1-flash-image-preview',
     'gemini-3-pro-image-preview',
 ];
