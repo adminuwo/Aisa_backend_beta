@@ -43,6 +43,12 @@ const GenerationJobSchema = new mongoose.Schema({
     enum: ['pending', 'processing', 'completed', 'failed', 'cancelled'], 
     default: 'pending' 
   },
+  // Tracks which phase of carousel generation we're in (for frontend progress display)
+  currentPhase: {
+    type: String,
+    enum: ['rendering', 'compositing', 'saving'],
+    default: 'rendering'
+  },
   startedAt: { 
     type: Date 
   },

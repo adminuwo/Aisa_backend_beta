@@ -42,7 +42,7 @@ export const getToolCost = (toolName, body = {}) => {
         generate_image: 74, // Imagen 3 (₹3.70) -> 50% profit @ 74 credits (₹7.4)
         generate_image_hd: 110, 
         generate_image_ultra: 145,
-        ai_ads_agent: 241, // Imagen 3 + GPT-4 Prompting (₹12.04) -> 50% profit @ 241 credits (₹24.1)
+        ai_ads_agent: 189, // Updated pricing: ₹18.90 (₹9.00 cost)
         edit_image: 74,
         gemini_flash: 19, // Brand DNA Scraping (₹0.93) -> 19 credits
         activate_strategy: 60, // 30-Day Strategy (₹3.00) -> 60 credits

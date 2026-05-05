@@ -497,235 +497,156 @@ const GEMINI_SUPPORTED_IMAGE_MIMES = new Set([
 
 const isGeminiSupportedImage = (mime) => GEMINI_SUPPORTED_IMAGE_MIMES.has(mime.toLowerCase());
 
+// Helper: escape special characters for safe SVG text embedding
+const escapeXml = (str = '') => str
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&apos;')
+  .substring(0, 120); // cap length to avoid SVG overflow
+
+/**
+ * STEP 2.5 — BRAND OVERLAY (Sharp-based, 100% local, no external API)
+ * ─────────────────────────────────────────────────────────────────────
+ * Composites the brand logo (top-left) and a text banner (bottom) onto
+ * the generated image using Sharp — no Gemini call, no region issues,
+ * no quota errors. Runs in ~1-2s vs ~30s for the old Gemini path.
+ *
+ * Gracefully returns the original imageUrl if any step fails.
+ */
 const applyVisualOverlays = async (imageUrl, logoUrl, headingText, subheadingText, aspectRatio = '1:1') => {
   if (!logoUrl && !headingText && !subheadingText) {
-    console.log('    [VisualOverlay] ⏩  Skipping — no text or logo to overlay.');
+    console.log('    [SharpOverlay] ⏩  Skipping — no text or logo to overlay.');
     return imageUrl;
   }
 
-  console.log('    [VisualOverlay] 🏷️  Applying overlays (Logo + Text)...');
+  console.log('    [SharpOverlay] 🎨 Compositing overlays locally via Sharp...');
   const overlayStart = Date.now();
 
   try {
-    // 1. Download the generated image as base64
-    //    Use a longer timeout (45 s) — full-res Gemini images can be several MB.
+    // ── 1. Download the main generated image ────────────────────────
     const imageResponse = await axios.get(imageUrl, { responseType: 'arraybuffer', timeout: 45000 });
-    const imageData = imageResponse.data;
+    const imageBuffer = Buffer.from(imageResponse.data);
 
-    if (!imageData || imageData.byteLength < 100) {
-      console.warn(`    [VisualOverlay] ⚠️  Downloaded image is empty/too small (${imageData?.byteLength ?? 0} bytes) — skipping overlay.`);
+    if (!imageBuffer || imageBuffer.byteLength < 100) {
+      console.warn('    [SharpOverlay] ⚠️  Downloaded image is empty — skipping overlay.');
       return imageUrl;
     }
 
-    const imageBase64 = Buffer.from(imageData).toString('base64');
-    // Force a valid image MIME — GCS signed URLs often return application/octet-stream
-    const imageMime = toImageMime(imageResponse.headers['content-type']);
-    console.log(`    [VisualOverlay] 📦 Image downloaded: ${imageData.byteLength} bytes | MIME: ${imageMime}`);
+    // Get image dimensions for proportional sizing
+    const meta = await sharp(imageBuffer).metadata();
+    const W = meta.width || 1024;
+    const H = meta.height || 1024;
+    console.log(`    [SharpOverlay] 📐 Image: ${W}×${H}px`);
 
-    // 2. Download the brand logo as base64 (if available)
-    let logoBase64 = null;
-    let logoMime = null;
+    const compositeInputs = [];
 
-    // Gemini only accepts these image formats as inlineData input
-    const GEMINI_SUPPORTED_MIMES = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'image/heic', 'image/heif'];
-
+    // ── 2. Logo — download, convert to PNG, resize, place top-left ──
     if (logoUrl) {
       try {
         let logoResponse = await axios.get(logoUrl, { responseType: 'arraybuffer', timeout: 20000 });
-        let rawBuffer = Buffer.from(logoResponse.data);
+        let rawLogoBuffer = Buffer.from(logoResponse.data);
         let rawContentType = (logoResponse.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
 
-        // If the logo is an ICO (unsupported by Gemini and sharp natively), convert it to PNG using Google Favicon API
+        // Handle ICO → PNG via Google Favicon API
         if (rawContentType.includes('icon') || logoUrl.toLowerCase().endsWith('.ico')) {
           try {
-            console.log(`    [VisualOverlay] 🔄 ICO format detected. Fetching PNG equivalent via Favicon API...`);
-            const urlObj = new URL(logoUrl);
-            const domain = urlObj.hostname;
-            const googleFaviconUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=256`;
-
-            logoResponse = await axios.get(googleFaviconUrl, { responseType: 'arraybuffer', timeout: 10000 });
-            rawBuffer = Buffer.from(logoResponse.data);
-            rawContentType = (logoResponse.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
-            console.log(`    [VisualOverlay] ✅ Successfully converted ICO to ${rawContentType}`);
+            const domain = new URL(logoUrl).hostname;
+            const fallbackRes = await axios.get(`https://www.google.com/s2/favicons?domain=${domain}&sz=256`, { responseType: 'arraybuffer', timeout: 10000 });
+            rawLogoBuffer = Buffer.from(fallbackRes.data);
+            console.log('    [SharpOverlay] 🔄 ICO → PNG via Favicon API');
           } catch (e) {
-            console.warn(`    [VisualOverlay] ⚠️ Failed to fetch PNG equivalent for ICO: ${e.message}`);
+            console.warn('    [SharpOverlay] ⚠️  ICO fallback failed:', e.message);
           }
         }
 
-        if (rawBuffer.byteLength >= 100) {
-          // Strategy 1: sharp direct conversion → always outputs PNG (Gemini-supported)
-          try {
-            const pngBuffer = await sharp(rawBuffer).png().toBuffer();
-            logoBase64 = pngBuffer.toString('base64');
-            logoMime = 'image/png';
-            console.log(`    [VisualOverlay] 🖼️  Logo converted to PNG via sharp: ${pngBuffer.byteLength} bytes`);
-          } catch (sharpErr) {
-            // Strategy 2: sharp with failOn:none — handles partially corrupt files
-            try {
-              const pngBuffer = await sharp(rawBuffer, { failOn: 'none' })
-                .resize({ width: 400, withoutEnlargement: true })
-                .png()
-                .toBuffer();
-              logoBase64 = pngBuffer.toString('base64');
-              logoMime = 'image/png';
-              console.log(`    [VisualOverlay] 🖼  Logo converted via resize fallback: ${pngBuffer.byteLength} bytes`);
-            } catch (resizeErr) {
-              // Strategy 3: Only send raw if Gemini natively supports the format
-              if (GEMINI_SUPPORTED_MIMES.includes(rawContentType)) {
-                logoBase64 = rawBuffer.toString('base64');
-                logoMime = rawContentType;
-                console.log(`    [VisualOverlay] 🖼  Logo sent as raw ${rawContentType}: ${rawBuffer.byteLength} bytes`);
-              } else {
-                // ICO, BMP, SVG, TIFF etc — Gemini rejects these, skip logo entirely
-                console.warn(`    [VisualOverlay] ⚠️  Logo format "${rawContentType}" is not supported by Gemini — skipping logo, text overlay will still apply.`);
-              }
-            }
-          }
-        } else {
-          console.warn('    [VisualOverlay] ⚠️  Logo downloaded but appears empty — skipping logo.');
-        }
+        // Resize logo to 12% of image width (max 160px), convert to PNG
+        const logoTargetWidth = Math.min(Math.round(W * 0.12), 160);
+        const logoPng = await sharp(rawLogoBuffer, { failOn: 'none' })
+          .resize({ width: logoTargetWidth, withoutEnlargement: true })
+          .png()
+          .toBuffer();
+
+        // Add white semi-transparent rounded background behind logo for visibility
+        const logoPadding = 10;
+        const logoMeta = await sharp(logoPng).metadata();
+        const bgW = (logoMeta.width || logoTargetWidth) + logoPadding * 2;
+        const bgH = (logoMeta.height || logoTargetWidth) + logoPadding * 2;
+
+        const logoBgSvg = `<svg width="${bgW}" height="${bgH}" xmlns="http://www.w3.org/2000/svg">
+          <rect rx="12" ry="12" width="${bgW}" height="${bgH}" fill="rgba(255,255,255,0.75)"/>
+        </svg>`;
+
+        const logoBgBuffer = await sharp(Buffer.from(logoBgSvg)).png().toBuffer();
+
+        // Composite: white bg → logo on top
+        const logoWithBg = await sharp(logoBgBuffer)
+          .composite([{ input: logoPng, left: logoPadding, top: logoPadding }])
+          .png()
+          .toBuffer();
+
+        compositeInputs.push({ input: logoWithBg, top: 20, left: 20 });
+        console.log(`    [SharpOverlay] 🖼  Logo ready: ${logoTargetWidth}px wide`);
       } catch (e) {
-        console.warn(`    [VisualOverlay] ⚠️  Logo download failed (${e.message}), continuing with text only.`);
+        console.warn('    [SharpOverlay] ⚠️  Logo processing failed:', e.message, '— skipping logo.');
       }
     }
 
-
-
-
-    // 3. Use Gemini Flash image editing to composite
-    //    IMPORTANT: use 'global' location — same as generateImageFromPrompt uses;
-    //    sending to a regional endpoint that doesn't host the model causes INVALID_ARGUMENT.
-    const client = new GoogleGenAI({
-      vertexai: true,
-      project: process.env.GCP_PROJECT_ID,
-      location: 'global',
-    });
-
-    const parts = [
-      { inlineData: { mimeType: imageMime, data: imageBase64 } }
-    ];
-
-    if (logoBase64) {
-      parts.push({ inlineData: { mimeType: logoMime, data: logoBase64 } });
-    }
-
-    let overlayPrompt = `You are a professional image compositor and graphic designer for social media ads.
-You are given ${logoBase64 ? 'two images' : 'an image'}:
-- Image 1: A social media ad post (the main image)
-${logoBase64 ? '- Image 2: A brand logo\n' : ''}
-Your task is to overlay the following elements cleanly and beautifully without covering the main subject of the image:
-`;
-
-    if (logoBase64) {
-      overlayPrompt += `
-1. Place the brand logo (Image 2) neatly in the top-left corner.
-2. Size the logo to approximately 10-15% of the image width.
-3. Add a very subtle semi-transparent white padding around the logo for visibility if needed.
-`;
-    }
-
+    // ── 3. Text banner — SVG composite at the bottom ────────────────
     if (headingText || subheadingText) {
-      overlayPrompt += `
-${logoBase64 ? '4' : '1'}. Carefully overlay the following text onto the image in a professional, highly readable marketing style:
-   - HEADING: "${headingText || ''}"
-   - SUBHEADING: "${subheadingText || ''}"
-${logoBase64 ? '5' : '2'}. Use a clean, modern, sans-serif font. Make the HEADING bold and prominent, and the SUBHEADING slightly smaller.
-${logoBase64 ? '6' : '3'}. Choose a contrasting color (e.g., white text on dark background or black text on light background) and use subtle shadows or a semi-transparent dark banner behind the text to ensure perfect typography legibility. Place it at the top, bottom, or the most empty space of the image.
-`;
+      const bannerH = Math.round(H * 0.18); // 18% of image height
+      const headingSize = Math.max(22, Math.round(W / 22));
+      const subSize = Math.max(16, Math.round(W / 32));
+      const headingY = Math.round(bannerH * 0.42);
+      const subY = Math.round(bannerH * 0.78);
+
+      const safeHeading = escapeXml(headingText || '');
+      const safeSub = escapeXml(subheadingText || '');
+
+      const bannerSvg = `<svg width="${W}" height="${bannerH}" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="rgba(0,0,0,0)"/>
+            <stop offset="100%" stop-color="rgba(0,0,0,0.72)"/>
+          </linearGradient>
+          <filter id="shadow" x="-5%" y="-5%" width="110%" height="110%">
+            <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="rgba(0,0,0,0.9)"/>
+          </filter>
+        </defs>
+        <rect width="${W}" height="${bannerH}" fill="url(#bg)"/>
+        ${safeHeading ? `<text x="24" y="${headingY}" font-family="Arial, Helvetica, sans-serif" font-size="${headingSize}" font-weight="bold" fill="white" filter="url(#shadow)">${safeHeading}</text>` : ''}
+        ${safeSub ? `<text x="24" y="${subY}" font-family="Arial, Helvetica, sans-serif" font-size="${subSize}" fill="rgba(255,255,255,0.88)" filter="url(#shadow)">${safeSub}</text>` : ''}
+      </svg>`;
+
+      const bannerBuffer = await sharp(Buffer.from(bannerSvg)).png().toBuffer();
+      compositeInputs.push({ input: bannerBuffer, top: H - bannerH, left: 0 });
+      console.log(`    [SharpOverlay] 📝 Text banner ready (${bannerH}px, heading: "${safeHeading.substring(0, 30)}")`);
     }
 
-    overlayPrompt += `
-* Preserve the original ad image composition, colors, lighting, and quality.
-* Do NOT alter any other part of the image.
-* Output the final composited image ONLY.
-* CRITICAL: DO NOT output any text, reasoning, planning, or explanation. Provide exactly 0 words of text.`;
+    // ── 4. Composite everything onto the base image ──────────────────
+    const composited = await sharp(imageBuffer)
+      .composite(compositeInputs)
+      .png()
+      .toBuffer();
 
-    parts.push({ text: overlayPrompt });
-
-    let geminiRatio = '1:1'; // safe default
-    if (aspectRatio === '16:9') geminiRatio = '16:9';
-    else if (aspectRatio === '9:16') geminiRatio = '9:16';
-    else if (aspectRatio === '4:3') geminiRatio = '4:3';
-    else if (aspectRatio === '3:4') geminiRatio = '3:4';
-    else if (aspectRatio === '4:5') geminiRatio = '4:5';
-    else if (aspectRatio === '1:1') geminiRatio = '1:1';
-
-    let response;
-    let retryCount = 0;
-    const maxRetries = 3;
-    let currentModel = 'gemini-3.1-flash-image-preview';
-
-    while (true) {
-      try {
-        const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('TIMEOUT: Gemini compositing took too long')), 120000)
-        );
-
-        response = await Promise.race([
-          client.models.generateContent({
-            model: currentModel,
-            contents: [{ role: 'user', parts }],
-            config: {
-              responseModalities: [Modality.TEXT, Modality.IMAGE],
-              imageConfig: { aspectRatio: geminiRatio }
-            }
-          }),
-          timeoutPromise
-        ]);
-        break;
-      } catch (err) {
-        const isQuotaError = err.status === 429 || err.message?.includes('429') || err.message?.includes('RESOURCE_EXHAUSTED') || err.message?.includes('quota');
-        const isTimeout = err.message?.includes('TIMEOUT') || err.message?.includes('timeout') || err.message?.includes('Deadline Exceeded');
-
-        if (retryCount < maxRetries && (isQuotaError || isTimeout)) {
-          retryCount++;
-          // Fallback to pro after first failure if it's struggling
-          currentModel = 'gemini-3-pro-image-preview';
-          console.warn(`    [VisualOverlay] ⚠️  Generation failed (${isTimeout ? 'Timeout' : 'Quota 429'}). Retrying ${retryCount}/${maxRetries} with fallback model ${currentModel} after ${retryCount * 4}s...`);
-          await new Promise(r => setTimeout(r, retryCount * 4000));
-        } else {
-          throw err;
-        }
-      }
-    }
-
-    // 1234
-    // 4. Extract the resulting image bytes
-    let resultBase64 = null;
-    let resultMime = 'image/png';
-    const responseParts = response?.candidates?.[0]?.content?.parts || [];
-    for (const part of responseParts) {
-      if (part.inlineData?.data) {
-        resultBase64 = part.inlineData.data;
-        resultMime = part.inlineData.mimeType || 'image/png';
-      } else if (part.text) {
-        console.log(`    [VisualOverlay] Gemini note: \`${part.text.substring(0, 120)}`);
-      }
-    }
-
-    if (!resultBase64) {
-      console.warn('    [VisualOverlay] ⚠️  Gemini returned no image — falling back to original.');
-      return imageUrl;
-    }
-
-    // 5. Upload composited image to GCS
-    const buffer = Buffer.from(resultBase64, 'base64');
-    const gcsResult = await uploadToGCS(buffer, {
+    // ── 5. Upload branded image to GCS ───────────────────────────────
+    const gcsResult = await uploadToGCS(composited, {
       folder: 'generated_images',
       filename: gcsFilename('aisa_branded_post'),
-      mimeType: resultMime,
+      mimeType: 'image/png',
     });
 
     if (!gcsResult?.publicUrl) {
-      console.warn('    [VisualOverlay] ⚠️  GCS upload failed — falling back to original.');
+      console.warn('    [SharpOverlay] ⚠️  GCS upload failed — returning original image.');
       return imageUrl;
     }
 
-    console.log(`    [VisualOverlay] ✅ Overlays composited in ${Date.now() - overlayStart}ms → ${gcsResult.publicUrl.substring(0, 60)}...`);
+    console.log(`    [SharpOverlay] ✅ Overlay complete in ${Date.now() - overlayStart}ms → ${gcsResult.publicUrl.substring(0, 60)}...`);
     return gcsResult.publicUrl;
 
   } catch (err) {
-    console.error(`    [VisualOverlay] ❌ Overlay failed (${err.message}) — using original image.`);
+    console.error(`    [SharpOverlay] ❌ Overlay failed (${err.message}) — using original image.`);
     return imageUrl;
   }
 };
@@ -984,32 +905,76 @@ Output ONLY a raw JSON array (no markdown, no explanation) like this:
       slideTexts = buildLocalVariations(carouselSlides.length);
     }
 
-    // Stagger calls 1.2s apart to avoid hitting Imagen's concurrent quota limit
+    // ── PHASE 1: Sequential Image Generation (quota-safe, 1.2s stagger) ─────────
+    // Imagen has concurrent quota limits — we generate one slide at a time.
+    console.log(`\n    ⚡ [Phase 1/2] Rendering ${carouselSlides.length} slides sequentially (1.2s apart)...`);
+    const rawSlideUrls = []; // Collect all raw URLs first
+
     for (let i = 0; i < carouselSlides.length; i++) {
       const p = carouselSlides[i];
       console.log(`       -> Rendering Slide ${i + 1}/${carouselSlides.length}: "${p.substring(0, 40)}..."`);
       try {
         const rawSlideUrl = await generateImageFromPrompt(p, null, aspectRatio, selectedModel);
         if (rawSlideUrl) {
-          // ── STEP 2.5: Apply brand logo and text overlay to each slide ──
-          const slideHeading = slideTexts[i]?.heading || title;
-          const slideSubheading = slideTexts[i]?.subheading || hook;
-          const brandedSlideUrl = await applyVisualOverlays(rawSlideUrl, brand.logoUrl, slideHeading, slideSubheading, aspectRatio);
-          generatedSlides.push(brandedSlideUrl);
-
-          // --- UPDATE JOB PROGRESS FOR FRONTEND POLL ---
-          await GenerationJob.findByIdAndUpdate(jobId, { completedCount: i + 1 }).catch(() => { });
+          rawSlideUrls.push({ url: rawSlideUrl, index: i });
+          // ── Update job progress for frontend polling ──
+          await GenerationJob.findByIdAndUpdate(jobId, {
+            completedCount: i + 1,
+            currentPhase: 'rendering'
+          }).catch(() => {});
+          console.log(`       ✅ Slide ${i + 1} image ready. (completedCount: ${i + 1}/${carouselSlides.length})`);
         } else {
-          console.warn(`       ⚠️  Slide ${i + 1} returned empty URL`);
+          console.warn(`       ⚠️  Slide ${i + 1} returned empty URL — skipping.`);
+          rawSlideUrls.push(null);
         }
       } catch (err) {
-        console.error(`       ❌ Slide ${i + 1} failed: ${err.message}`);
+        console.error(`       ❌ Slide ${i + 1} image generation failed: ${err.message}`);
+        rawSlideUrls.push(null);
       }
-      // Wait 1.2s between slides to avoid rate limiting (except after last slide)
+      // Stagger 1.2s between slides to avoid hitting Imagen's concurrent quota limit
       if (i < carouselSlides.length - 1) {
         await new Promise(r => setTimeout(r, 1200));
       }
     }
+
+    // ── PHASE 2: Staggered-Parallel Overlays ─────────────────────────────────────
+    // Firing all overlays at once causes 429 quota errors (concurrent Gemini limit).
+    // Instead, stagger starts by 3s per slide so they overlap but don't compete.
+    // e.g. 3 slides: overlay1 starts t=0, overlay2 t=3s, overlay3 t=6s → all done ~t=35s
+    // vs fully sequential: 3 × 30s = 90s  |  vs simultaneous: 429 quota errors
+    const validSlideCount = rawSlideUrls.filter(Boolean).length;
+    const OVERLAY_STAGGER_MS = 3000; // 3s gap between each overlay start
+    console.log(`\n    🏷️  [Phase 2/2] Running ${validSlideCount} overlay(s) staggered (${OVERLAY_STAGGER_MS / 1000}s apart)...`);
+    const overlayPhaseStart = Date.now();
+
+    const overlayResults = await Promise.all(
+      rawSlideUrls.map(async (slide, i) => {
+        if (!slide) return null;
+        // Stagger: slide i waits i × 3s before starting its overlay
+        if (i > 0) await new Promise(r => setTimeout(r, i * OVERLAY_STAGGER_MS));
+
+        const slideHeading = slideTexts[i]?.heading || title;
+        const slideSubheading = slideTexts[i]?.subheading || hook;
+        console.log(`       🏷️  Overlay Slide ${i + 1} starting (stagger: ${i * OVERLAY_STAGGER_MS / 1000}s offset)...`);
+        try {
+          const branded = await applyVisualOverlays(slide.url, brand.logoUrl, slideHeading, slideSubheading, aspectRatio);
+          await GenerationJob.findByIdAndUpdate(jobId, {
+            completedCount: i + 1,
+            currentPhase: 'compositing'
+          }).catch(() => {});
+          console.log(`       ✅ Overlay Slide ${i + 1} done.`);
+          return branded;
+        } catch (err) {
+          console.error(`       ❌ Overlay Slide ${i + 1} failed: ${err.message} — using raw image.`);
+          return slide.url; // Graceful fallback to un-composited image
+        }
+      })
+    );
+
+    generatedSlides = overlayResults.filter(Boolean);
+    console.log(`    ✅ All ${generatedSlides.length} overlay(s) completed in ${Date.now() - overlayPhaseStart}ms (staggered-parallel).`);
+
+
     imageUrl = generatedSlides[0] || '';
     console.log(`    ✅ ${generatedSlides.length}/${carouselSlides.length} slides rendered successfully.`);
   } else {
@@ -1068,7 +1033,8 @@ Output ONLY a raw JSON array (no markdown, no explanation) like this:
   await GenerationJob.findByIdAndUpdate(jobId, {
     status: 'completed',
     completedAt: new Date(),
-    completedCount: 1,
+    completedCount: isCarousel ? generatedSlides.length : 1, // actual slide count, not hardcoded 1
+    currentPhase: 'saving',
     resultAssetId: asset._id,
   });
   console.log(`    ✅ Job ${jobId} → status: "completed"`);
