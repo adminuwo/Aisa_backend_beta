@@ -39,8 +39,8 @@ const BrandProfileSchema = new mongoose.Schema({
   
   // NEW STRATEGIC INPUTS
   targetIndustry: { type: String },
-  targetAudience: { type: String },
-  contentObjective: { type: String },
+  targetAudience: { type: mongoose.Schema.Types.Mixed },
+  contentObjective: { type: mongoose.Schema.Types.Mixed },
   campaignMonth: { type: String },
   postingFrequency: { type: String },
   calendarDuration: { type: String, default: '30' },
