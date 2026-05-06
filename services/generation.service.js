@@ -989,13 +989,11 @@ Output ONLY a raw JSON array (no markdown, no explanation) like this:
       const p = carouselSlides[i];
       console.log(`       -> Rendering Slide ${i + 1}/${carouselSlides.length}: "${p.substring(0, 40)}..."`);
       try {
-        await GenerationJob.findByIdAndUpdate(jobId, { currentPhase: 'rendering' }).catch(() => {});
         const rawSlideUrl = await generateImageFromPrompt(p, null, aspectRatio, selectedModel);
         if (rawSlideUrl) {
           // ── STEP 2.5: Apply brand logo and text overlay to each slide ──
           const slideHeading = slideTexts[i]?.heading || title;
           const slideSubheading = slideTexts[i]?.subheading || hook;
-          await GenerationJob.findByIdAndUpdate(jobId, { currentPhase: 'compositing' }).catch(() => {});
           const brandedSlideUrl = await applyVisualOverlays(rawSlideUrl, brand.logoUrl, slideHeading, slideSubheading, aspectRatio);
           generatedSlides.push(brandedSlideUrl);
 
@@ -1034,7 +1032,6 @@ Output ONLY a raw JSON array (no markdown, no explanation) like this:
 
   // ── STEP 3: Save GeneratedAsset to DB ────────────────────────────
   console.log('\n[Step 3/5] 💾 Saving GeneratedAsset to MongoDB...');
-  await GenerationJob.findByIdAndUpdate(jobId, { currentPhase: 'finalizing' }).catch(() => {});
   const assetStart = Date.now();
 
   const assetName = `visual_${title.replace(/\s+/g, '_').substring(0, 30)}_${Date.now()}.png`;
