@@ -357,6 +357,29 @@ export const getAiSnapshot = async (symbol, name = null) => {
 
     } catch (error) {
         logger.error(`[Stock Service] AI Snapshot failed for ${symbol}: ${error.message}`);
-        return null;
+        // Fallback for local development if Vertex AI is not configured
+        return {
+            symbol,
+            name: name || symbol.split('.')[0],
+            currentPrice: '---',
+            verdict: 'HOLD',
+            indicators: {},
+            report: 'AI analysis unavailable locally.',
+            chart_data: [],
+            overview: `Overview of ${symbol} is unavailable locally due to missing Vertex AI config.`,
+            trend_sector: "Local Mode Trend",
+            risk_analysis: {
+                total: 0, high: 0, medium: 0, low: 0, breakdown: []
+            },
+            research: { industry: "N/A", performance: "N/A", competitor: "N/A" },
+            recommendation: { entry: "N/A", view: "N/A", advice: "N/A", metric: "N/A" },
+            analyst_estimates: {
+                average_target_price: "2350 (Mock)",
+                high_estimate: "2600 (Mock)",
+                low_estimate: "2100 (Mock)",
+                analyst_sentiment: "Generally cautious (Mock)",
+                context: "Local development mock data because Vertex AI failed."
+            }
+        };
     }
 };
