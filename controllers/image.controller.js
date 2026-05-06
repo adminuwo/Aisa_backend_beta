@@ -25,7 +25,7 @@ const getGenAIClient = () => new GoogleGenAI({
     location: 'global', // Image models require global endpoint
 });
 
-export const generateImageFromPrompt = async (prompt, originalImage = null, aspectRatio = '1:1', selectedModelId = 'gemini-1.5-flash-image', manualEditMode = null) => {
+export const generateImageFromPrompt = async (prompt, originalImage = null, aspectRatio = '1:1', selectedModelId = 'gemini-3.1-flash-image-preview', manualEditMode = null) => {
     const startTime = Date.now();
     try {
         if (!process.env.GCP_PROJECT_ID) {
