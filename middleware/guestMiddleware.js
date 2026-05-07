@@ -66,10 +66,11 @@ export const identifyGuest = async (req, res, next) => {
         }
 
         // Set HttpOnly cookie
+        const isProduction = process.env.NODE_ENV === 'production' || req.hostname !== 'localhost';
         res.cookie('aisa_guest_id', guestId, {
             httpOnly: true,
-            secure: true, // Always secure for HttpOnly cookies in modern browsers
-            sameSite: 'none', // Needed for cross-origin if frontend/backend are on different domains
+            secure: isProduction, // Only secure in production or non-localhost
+            sameSite: isProduction ? 'none' : 'lax', // Use 'lax' for local dev to avoid CSRF issues while allowing cookies
             maxAge: 365 * 24 * 60 * 60 * 1000 // 1 year
         });
 
