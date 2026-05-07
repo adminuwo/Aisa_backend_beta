@@ -9,6 +9,7 @@ router.delete('/history', chatController.clearHistory);
 router.get('/:id', chatController.getConversation);
 router.delete('/:id', chatController.deleteConversation);
 router.post('/upload', uploadMiddleware, chatController.uploadAttachment); // New Route
+router.post('/stream', chatController.stream);
 router.post('/', chatController.chat);
 
 export default router;

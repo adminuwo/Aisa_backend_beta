@@ -206,7 +206,7 @@ router.post("/", optionalVerifyToken, identifyGuest, async (req, res) => {
                 async (finalPrompt, activeModel) => {
                     return await generateImageFromPrompt(finalPrompt, null, aspectRatio || '1:1', activeModel);
                 },
-                { modelId: reqModelId || 'gemini-1.5-flash-image', enhance: true }
+                { modelId: reqModelId || 'gemini-2.5-flash', enhance: true }
             );
             
             if (pipelineResult.url) {
@@ -229,7 +229,7 @@ router.post("/", optionalVerifyToken, identifyGuest, async (req, res) => {
                 async (finalPrompt, activeModel) => {
                     return await generateImageFromPrompt(finalPrompt, sourceImage, aspectRatio || '1:1', activeModel);
                 },
-                { modelId: reqModelId || 'gemini-1.5-flash', enhance: true }
+                { modelId: reqModelId || 'gemini-2.5-flash', enhance: true }
             );
 
             if (pipelineResult.url) {
@@ -300,10 +300,15 @@ router.post("/", optionalVerifyToken, identifyGuest, async (req, res) => {
 
     console.log(`[BACKEND-CHAT] Session ID: ${sessionId} | Content Len: ${content?.length}`);
     let session = await ChatSession.findOne({ sessionId });
+    
+    // Logic: 
+    // - "New Chat" is the initial state.
+    // - "Greeting Exchange" is the state after a greeting.
+    // - Both are "Generic" and should be replaced if a meaningful message arrives.
     const isGenericTitle = !session ||
       session.title === "New Chat" ||
+      session.title === "Greeting Exchange" ||
       session.title === "Greeting" ||
-      session.title === "General Chat" ||
       (session.title && session.title.includes('...'));
       
     console.log(`[BACKEND-CHAT] Session found: ${!!session} | Generic Title: ${isGenericTitle} | Title: ${session?.title}`);
@@ -322,9 +327,15 @@ router.post("/", optionalVerifyToken, identifyGuest, async (req, res) => {
       if (userId) await userModel.findByIdAndUpdate(userId, { $addToSet: { chatSessions: session._id } });
     } else if (session && isGenericTitle) {
       const aiTitle = await aiService.generateConversationTitle(content);
-      if (aiTitle) session.title = aiTitle;
-      session.lastModified = Date.now();
-      await session.save();
+      // Only update if it's actually meaningful OR if we're moving from New Chat to Greeting
+      const isNewTitleMeaningful = aiTitle && aiTitle !== "Greeting Exchange" && aiTitle !== "New Chat";
+      const isInitialGreeting = session.title === "New Chat" && aiTitle === "Greeting Exchange";
+
+      if (isNewTitleMeaningful || isInitialGreeting) {
+        session.title = aiTitle;
+        session.lastModified = Date.now();
+        await session.save();
+      }
       finalResponse.title = session.title;
       finalResponse.sessionId = session.sessionId;
     }
@@ -376,6 +387,144 @@ router.post("/", optionalVerifyToken, identifyGuest, async (req, res) => {
   }
 });
 
+// --- STREAMING CHAT ENDPOINT ---
+router.post('/stream', optionalVerifyToken, identifyGuest, async (req, res) => {
+  const { content, message, sessionId, activeDocContent, systemInstruction, mode, image, document, language } = req.body;
+  const userMessage = content || message;
+
+  try {
+    // 1. LIMIT & CREDIT CHECKS
+    const limitCheck = await checkGuestLimits(req, sessionId);
+    if (!limitCheck.allowed) {
+      return res.status(403).json({ error: "LIMIT_REACHED", reason: limitCheck.reason });
+    }
+
+    let toolsRequested = ['chat'];
+    if (mode === 'DEEP_SEARCH' || mode === 'web_search') toolsRequested = [mode];
+    
+    if (req.user) {
+      if (!(req.user.email && req.user.email.toLowerCase() === 'admin@uwo24.com')) {
+        try {
+          await subscriptionService.checkCredits(req.user.id || req.user._id, toolsRequested, req.body);
+        } catch (subError) {
+          // SSE headers not sent yet, can send JSON error
+          return res.status(403).json({ success: false, code: subError.message === "PREMIUM_RESTRICTED" ? "PREMIUM_ONLY" : "OUT_OF_CREDITS", message: subError.message });
+        }
+      }
+    }
+
+    // 2. PRE-PROCESSING: Extract text from DOCX files (Gemini/Vertex AI does not support .docx natively)
+    let processedDocContent = activeDocContent;
+    let filteredDocuments = document;
+    
+    if (document && Array.isArray(document) && document.length > 0) {
+      const docTexts = [];
+      const validDocs = [];
+      
+      for (const doc of document) {
+        const isWord = doc.mimeType?.includes('word') || doc.name?.match(/\.(docx|doc)$/i);
+        const isRtf = doc.mimeType?.includes('rtf') || doc.name?.match(/\.rtf$/i);
+        
+        if ((isWord || isRtf) && doc.base64Data) {
+          try {
+            const buffer = Buffer.from(doc.base64Data, 'base64');
+            let extractedText = "";
+            
+            if (isWord) {
+              const parser = (officeParser && officeParser.parseOfficeAsync) ? officeParser : (officeParser?.default || officeParser);
+              try {
+                if (parser && typeof parser.parseOfficeAsync === 'function') {
+                  extractedText = await parser.parseOfficeAsync(buffer);
+                } else {
+                  throw new Error("officeParser not properly loaded");
+                }
+              } catch (officeErr) {
+                console.warn("[Mammoth Fallback] officeparser failed or not loaded in stream:", officeErr.message);
+                const result = await mammoth.extractRawText({ buffer });
+                extractedText = result.value;
+              }
+            } else if (isRtf) {
+               // Basic RTF to Text Regex extraction
+               const rtfContent = buffer.toString('utf-8');
+               extractedText = rtfContent
+                 .replace(/\\([a-z]{1,32})(-?\d+)? ?/g, '') // Strip RTF keywords
+                 .replace(/\{[^}]+\}/g, '') // Strip RTF groups
+                 .replace(/\r?\n/g, ' ') // Flatten newlines
+                 .trim();
+            }
+            
+            if (extractedText) {
+              docTexts.push(`[${isRtf ? 'RTF' : 'Word'} Document Content: ${doc.name || 'Untitled'}]\n${extractedText}`);
+            }
+          } catch (mErr) {
+            console.error("[Document Extraction Error in Stream]", mErr);
+          }
+        } else {
+          validDocs.push(doc);
+        }
+      }
+      
+      if (docTexts.length > 0) {
+        processedDocContent = (processedDocContent ? processedDocContent + '\n\n' : '') + docTexts.join('\n\n---\n\n');
+      }
+      filteredDocuments = validDocs;
+    }
+
+    // 3. SSE SETUP
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    let userId = req.user?.id || req.user?._id || 'admin';
+    let userName = null;
+    if (req.user && req.user.id) {
+        const user = await userModel.findById(req.user.id).select('name');
+        if (user && user.name) userName = user.name.split(' ')[0];
+    }
+
+    // 4. CALL STREAMING SERVICE
+    const streamResult = await aiService.chatStream(userMessage, processedDocContent, {
+        systemInstruction,
+        mode,
+        images: image,
+        documents: filteredDocuments,
+        userName,
+        conversationId: sessionId,
+        userId,
+        language
+    }, (token) => {
+        res.write(`data: ${JSON.stringify({ token })}\n\n`);
+    });
+
+    // Send suggestions if available
+    if (streamResult && streamResult.suggestions) {
+        res.write(`data: ${JSON.stringify({ suggestions: streamResult.suggestions })}\n\n`);
+    }
+
+    res.write('data: [DONE]\n\n');
+
+    // 5. DEDUCT CREDITS (Post-Stream)
+    if (req.user && req.user.id && !(req.user.email && req.user.email.toLowerCase() === 'admin@uwo24.com')) {
+        try {
+          await subscriptionService.deductCredits(req.user.id, toolsRequested, sessionId, req.body);
+        } catch (deductErr) {
+          console.error("[STREAM-CREDITS] Deduction failed:", deductErr.message);
+        }
+    }
+
+    res.end();
+
+  } catch (error) {
+    console.error("[STREAM ERROR]", error);
+    if (res.headersSent) {
+        res.write(`data: ${JSON.stringify({ error: error.message })}\n\n`);
+        res.end();
+    } else {
+        res.status(500).json({ error: 'Streaming failed', details: error.message });
+    }
+  }
+});
+
 // --- SESSION LIST ---
 router.get('/', optionalVerifyToken, identifyGuest, async (req, res) => {
   try {
@@ -390,10 +539,12 @@ router.get('/', optionalVerifyToken, identifyGuest, async (req, res) => {
 
     if (userId) {
       const query = { userId: userId };
-      if (projectId && projectId !== 'null' && projectId !== 'undefined' && projectId !== 'default' && projectId !== 'all') {
+      if (projectId === 'all') {
+        // Return all sessions for the user (don't filter by projectId)
+      } else if (projectId && projectId !== 'null' && projectId !== 'undefined' && projectId !== 'default') {
         query.projectId = projectId;
       } else {
-        // If no projectId or 'null', return chats where projectId is null or doesn't exist
+        // If no projectId or 'null'/'default', return chats where projectId is null or doesn't exist
         query.projectId = { $in: [null, undefined] };
       }
 

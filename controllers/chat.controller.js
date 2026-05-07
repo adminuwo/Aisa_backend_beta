@@ -182,6 +182,56 @@ export const uploadAttachment = async (req, res, next) => {
     }
 };
 
+export const stream = async (req, res, next) => {
+    try {
+        const { message, conversationId, activeDocContent, systemInstruction, mode, image, document, language } = req.body;
+
+        if (!message && (!image || image.length === 0) && (!document || document.length === 0)) {
+            return res.status(400).json({ success: false, message: 'Message or attachment is required' });
+        }
+
+        // Set headers for SSE
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+
+        let userId = req.user?.id || req.user?._id || 'admin';
+        let userName = null;
+        if (req.user && req.user.id) {
+            const user = await User.findById(req.user.id).select('name');
+            if (user && user.name) userName = user.name.split(' ')[0];
+        }
+
+        // Call streaming service
+        const streamResult = await aiService.chatStream(message, activeDocContent, {
+            systemInstruction,
+            mode,
+            images: image,
+            documents: document,
+            userName,
+            conversationId,
+            userId,
+            language
+        }, (token) => {
+            res.write(`data: ${JSON.stringify({ token })}\n\n`);
+        });
+
+        // Send suggestions if available
+        if (streamResult && streamResult.suggestions) {
+            res.write(`data: ${JSON.stringify({ suggestions: streamResult.suggestions })}\n\n`);
+        }
+
+        res.write('data: [DONE]\n\n');
+        res.end();
+
+    } catch (error) {
+        console.error("[STREAM ERROR]", error);
+        res.write(`data: ${JSON.stringify({ error: error.message })}\n\n`);
+        res.end();
+    }
+};
+
+
 
 // @desc    Get all conversations
 // @route   GET /api/chat/history

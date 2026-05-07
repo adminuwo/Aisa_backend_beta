@@ -19,6 +19,7 @@ import { detectLanguage } from '../utils/languageDetector.js';
 import { classifyIntent } from './intent/intentClassifier.js';
 import { getLegalPrompt, LEGAL_DISCLAIMER } from '../Tools/AI_Legal/legalPrompts.js';
 import { safeParseLLMJson } from '../utils/jsonUtils.js';
+import { modelName, genAIInstance } from '../config/vertex.js';
 
 
 // Real RAG Storage (MongoDB Atlas)
@@ -562,6 +563,95 @@ Maintain any text response outside the JSON block.`;
     }
 };
 
+export const chatStream = async (message, activeDocContent = null, options = {}, onToken) => {
+    logger.info(`[AI-Service] Chat STREAM request received. Mode: ${options.mode || 'NORMAL'}`);
+    try {
+        if (!message || typeof message !== 'string') {
+            message = String(message || "");
+        }
+
+        const { systemInstruction, mode, images, documents, userName, language, conversationId, userId, model, history } = options;
+
+        const lowerMsg = message.toLowerCase().trim();
+        const detected = detectLanguage(message);
+        const isAutoMode = !language || language === 'Auto';
+        const userLanguage = isAutoMode ? (detected || 'English') : language;
+        
+        const langSwitchRule = `### GLOBAL LANGUAGE PRIORITY SYSTEM: 
+        1. Priority 1 (Explicit): If user asks for a specific language (e.g., "Hindi me", "in English"), use it.
+        2. Priority 2 (UI Setting): Otherwise, use the GLOBAL UI SETTING: ${userLanguage}.
+        3. Priority 3 (Auto): Use detected script only if no UI setting or explicit instruction exists.
+        
+        ### STRICT ENFORCEMENT:
+        - Respond ENTIRELY in the target language. No mixing.
+        - If Target is Hindi, use Devanagari script and translate ALL headings/labels.`;
+
+        const personaContext = await userIntelligenceService.getPersonaInjection(userId);
+        const dynamicSystemInstruction = (systemInstruction || "") + personaContext;
+
+        const selectedModelName = options.modelOverride || modelName;
+        
+        // Setup parts
+        let parts = [{ text: message }];
+        if (activeDocContent) parts.unshift({ text: `CONTEXT:\n${activeDocContent}` });
+
+        if (images && images.length > 0) {
+            const imageParts = images.flatMap(img => [
+                { text: `[Attached Image: ${img.name || 'image'}]` },
+                { inlineData: { data: img.base64Data, mimeType: img.mimeType || 'image/png' } }
+            ]);
+            parts = [...imageParts, ...parts];
+        }
+
+        if (documents && documents.length > 0) {
+            const docParts = documents.flatMap(doc => [
+                { text: `[Attached Doc: ${doc.name || 'document'}]` },
+                { inlineData: { data: doc.base64Data, mimeType: doc.mimeType || 'application/pdf' } }
+            ]);
+            parts = [...docParts, ...parts];
+        }
+
+        let modelInstance;
+        if (genAIInstance) {
+            modelInstance = genAIInstance.getGenerativeModel({
+                model: selectedModelName,
+                systemInstruction: dynamicSystemInstruction + "\n\n" + langSwitchRule,
+            });
+        } else {
+            throw new Error("GenAI instance not initialized");
+        }
+
+        const result = await modelInstance.generateContentStream({ contents: [{ role: 'user', parts }] });
+        
+        let fullText = "";
+        for await (const chunk of result.stream) {
+            let chunkText = "";
+            if (typeof chunk.text === 'function') {
+                try {
+                    chunkText = chunk.text();
+                } catch (e) {
+                    chunkText = chunk.candidates?.[0]?.content?.parts?.[0]?.text || "";
+                }
+            } else {
+                chunkText = chunk.candidates?.[0]?.content?.parts?.[0]?.text || "";
+            }
+
+            if (chunkText) {
+                fullText += chunkText;
+                onToken(chunkText);
+            }
+        }
+
+        // Generate suggestions after stream finishes
+        const suggestions = await generateRelatedQuestions(message, fullText, userLanguage, mode);
+        return { text: fullText, suggestions };
+
+    } catch (error) {
+        logger.error(`[AI-STREAM-ERROR] ${error.message}`);
+        throw error;
+    }
+};
+
 export const initializeFromDB = async () => {
     try {
         await initializeVectorStore();
@@ -579,7 +669,7 @@ export const generateRelatedQuestions = async (userMessage, aiResponse, language
     try {
         const prompt = `You are an intelligent suggestion engine integrated into a chat system.
 
-Your task is to generate 3 to 5 highly relevant, clickable follow-up suggestions after every AI response.
+Your task is to generate exactly 3 or 4 highly relevant, clickable follow-up suggestions after every AI response.
 
 STRICT RULES:
 
@@ -597,7 +687,7 @@ STRICT RULES:
 
 4. Action-Oriented:
 - Each suggestion must feel clickable and actionable.
-- Use short, clear phrases (max 6-8 words).
+- Use short, clear phrases (max 5-7 words).
 - If Mode is LEGAL_TOOLKIT, suggest specific legal follow-ups.
 
 5. Variety:
@@ -627,8 +717,7 @@ Return ONLY this JSON format:
   "suggestions": [
     "Suggestion 1",
     "Suggestion 2",
-    "Suggestion 3",
-    "Suggestion 4"
+    "Suggestion 3"
   ]
 }
 
@@ -639,66 +728,127 @@ INPUT CONTEXT:
 - Assistant response: "${aiResponse}"
 - Mode: ${mode}`;
 
-        const response = await vertexService.AskVertexRaw(prompt, {
+        // Add a timeout to prevent hanging the chat stream
+        const aiCall = vertexService.AskVertexRaw(prompt, {
             maxOutputTokens: 200,
             temperature: 0.8,
-            modelOverride: 'gemini-1.5-flash'
+            modelOverride: 'gemini-2.5-flash'
         });
+
+        const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Suggestion generation timed out')), 5000)
+        );
+
+        const response = await Promise.race([aiCall, timeoutPromise]);
 
         const parsed = safeParseLLMJson(response, { suggestions: [] });
         const questions = parsed.suggestions || [];
-        return Array.isArray(questions) ? questions.slice(0, 5) : [];
+        return Array.isArray(questions) && questions.length > 0 ? questions.slice(0, 5) : [
+            "Tell me more",
+            "Give me an example",
+            "Explain in detail"
+        ];
     } catch (error) {
-        logger.error(`[RelatedQuestions] Error: ${error.message}`);
-        return [];
+        logger.error(`[RelatedQuestions] Error generating suggestions: ${error.message}`);
+        return [
+            "Tell me more",
+            "Give me an example",
+            "Explain in detail"
+        ];
     }
 };
 
+/**
+ * Generates an intelligent, ChatGPT-like title for a conversation.
+ * logic:
+ * 1. Detect if the message is a greeting or casual conversation.
+ * 2. If greeting, return "Greeting Exchange".
+ * 3. If meaningful, summarize into a concise title (3-6 words).
+ * 4. Strict formatting: No quotes, no emojis, proper capitalization, no ALL CAPS.
+ */
 export const generateConversationTitle = async (message) => {
     try {
-        const prompt = `Convert the following user message into a very short, clean title (3-5 words max).
+        const lowerMsg = message.toLowerCase().trim();
         
-Rules:
-- NO QUOTES.
-- NO CONVERSATIONAL FILLER.
-- DO NOT answer the user. Just title it.
-- Title Case for principal words.
-- If it's a greeting, just say "Greeting". 
-- ALWAYS try to summarize the topic if it's longer than 2 words.
+        // --- 1. GREETING/CASUAL DETECTION ---
+        const greetings = [
+            'hi', 'hello', 'hey', 'hyy', 'good morning', 'good evening', 'how are you', 
+            'kya kar rahe ho', 'ok', 'hmm', 'thanks', 'thank you', 'namaste', 'yo', 'sup'
+        ];
+        
+        // Simple heuristic for greetings before calling AI to save tokens/time
+        const isLikelyGreeting = greetings.some(g => lowerMsg === g || lowerMsg.startsWith(g + ' '));
+        
+        // AI classifier prompt for more accurate detection
+        const classifierPrompt = `Classify this user message as either "GREETING" or "MEANINGFUL_TOPIC".
+        Message: "${message}"
+        Reply only with the classification.`;
 
-User Message: "${message}"
-
-Title:`;
-
-        const fullPrompt = prompt;
-
-        // Log the request
-        logger.debug(`[AI-TITLE] Prompt: ${fullPrompt}`);
-
-        const title = await vertexService.AskVertexRaw(fullPrompt, {
-            maxOutputTokens: 50,
-            temperature: 0.1,
-            modelOverride: 'gemini-1.5-flash'
+        const classification = await vertexService.AskVertexRaw(classifierPrompt, {
+            maxOutputTokens: 10,
+            temperature: 0,
+            modelOverride: 'gemini-2.5-flash'
         });
 
-        // Log raw response
-        logger.debug(`[AI-TITLE] Raw response: "${title}"`);
-
-        // Clean up the potentially generated string (remove surrounding quotes if any)
-        const cleanTitle = title.trim().replace(/^["']|["']$/g, '').replace(/\.\.\.$/, '');
-
-        // If it's a safety block or too long, use fallback
-        if (cleanTitle.toLowerCase().includes("cannot fulfill") || cleanTitle.length > 60 || !cleanTitle) {
-            throw new Error(`Invalid AI title response: "${cleanTitle}"`);
+        if (classification.includes("GREETING") || (isLikelyGreeting && !classification.includes("MEANINGFUL"))) {
+            logger.info(`[AI-TITLE] Detected Greeting for: "${message}"`);
+            return "Greeting Exchange";
         }
 
+        // --- 2. MEANINGFUL TITLE GENERATION ---
+        const prompt = `You are a professional title generator. Summarize the user's query into a concise, high-quality chat title.
+
+STRICT RULES:
+- LENGTH: 3-6 words maximum.
+- TONE: Professional, smart, human-readable.
+- FORMAT: Proper Title Case (e.g., "Machine Learning Basics").
+- NO-GO: No quotes, no emojis, no extra punctuation, no ALL CAPS.
+- FALLBACK: If the query is unclear, summarize the main subject.
+
+User Query: "${message}"
+
+Short Title:`;
+
+        const title = await vertexService.AskVertexRaw(prompt, {
+            maxOutputTokens: 50,
+            temperature: 0.2,
+            modelOverride: 'gemini-2.5-flash'
+        });
+
+        // Clean up the generated string
+        let cleanTitle = title.trim()
+            .replace(/^["']|["']$/g, '') // Remove surrounding quotes
+            .replace(/[*#_~`]/g, '')     // Remove markdown
+            .replace(/[^\w\s-]/g, '')    // Remove special chars except space/dash
+            .replace(/\s+/g, ' ')        // Normalize whitespace
+            .trim();
+
+        // Enforce No ALL CAPS (except acronyms)
+        if (cleanTitle === cleanTitle.toUpperCase() && cleanTitle.length > 5) {
+            cleanTitle = cleanTitle.charAt(0).toUpperCase() + cleanTitle.slice(1).toLowerCase();
+        }
+
+        // Final safety check
+        if (!cleanTitle || cleanTitle.toLowerCase().includes("cannot fulfill") || cleanTitle.length > 60) {
+            throw new Error(`Invalid title generated: "${cleanTitle}"`);
+        }
+
+        logger.info(`[AI-TITLE] Generated: "${cleanTitle}" for message: "${message.substring(0, 30)}..."`);
         return cleanTitle;
+
     } catch (error) {
-        logger.error(`[AI-TITLE] Error generateConversationTitle: ${error.message}`);
-        // Last resort: substring of the message (ChatGPT-style fallback)
-        const words = message.trim().split(/\s+/);
-        if (words.length <= 2) return "General Chat";
-        return words.slice(0, 5).join(' ') + (words.length > 5 ? '' : '');
+        logger.error(`[AI-TITLE] Generation failed: ${error.message}`);
+        
+        // --- 3. FALLBACK LOGIC ---
+        // ChatGPT-style fallback: first few words of the message
+        const words = message.trim().split(/\s+/).filter(w => w.length > 0);
+        if (words.length === 0) return "New Chat";
+        
+        let fallback = words.slice(0, 5).join(' ');
+        if (fallback.length > 40) fallback = fallback.substring(0, 37) + "...";
+        
+        // Basic Title Case for fallback
+        return fallback.charAt(0).toUpperCase() + fallback.slice(1);
     }
 };
 

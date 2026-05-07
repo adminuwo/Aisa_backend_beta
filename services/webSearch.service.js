@@ -64,7 +64,7 @@ export const performSearch = async (query, userLanguage = 'English') => {
             systemInstruction: systemPrompt,
             useSearch: true,
             returnSources: true,
-            modelOverride: 'gemini-1.5-flash'
+            modelOverride: 'gemini-2.5-flash'
         });
 
         if (result && result.text) {
