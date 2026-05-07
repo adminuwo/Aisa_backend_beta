@@ -73,6 +73,7 @@ const chatSessionSchema = new mongoose.Schema({
   messages: [messageSchema],
   lastModified: { type: Number, default: Date.now },
   detectedMode: { type: String, default: 'NORMAL_CHAT' },
+  activeTool: { type: String, required: false }, // Stores specific legal tool (e.g. legal_draft_maker)
   isShared: { type: Boolean, default: false },
   shareId: { type: String, unique: true, sparse: true, index: true }
 }, { timestamps: true });

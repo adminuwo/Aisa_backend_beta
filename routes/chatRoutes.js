@@ -206,7 +206,7 @@ router.post("/", optionalVerifyToken, identifyGuest, async (req, res) => {
                 async (finalPrompt, activeModel) => {
                     return await generateImageFromPrompt(finalPrompt, null, aspectRatio || '1:1', activeModel);
                 },
-                { modelId: reqModelId || 'gemini-1.5-flash-image', enhance: true }
+                { modelId: reqModelId || 'gemini-2.5-flash-image', enhance: true }
             );
             
             if (pipelineResult.url) {
@@ -229,7 +229,7 @@ router.post("/", optionalVerifyToken, identifyGuest, async (req, res) => {
                 async (finalPrompt, activeModel) => {
                     return await generateImageFromPrompt(finalPrompt, sourceImage, aspectRatio || '1:1', activeModel);
                 },
-                { modelId: reqModelId || 'gemini-1.5-flash', enhance: true }
+                { modelId: reqModelId || 'gemini-2.5-flash', enhance: true }
             );
 
             if (pipelineResult.url) {
@@ -317,12 +317,21 @@ router.post("/", optionalVerifyToken, identifyGuest, async (req, res) => {
         guestId: req.guest?.guestId || null,
         projectId: (req.body.projectId === 'default' || req.body.projectId === 'all') ? null : (req.body.projectId || null),
         title: aiTitle || "New Chat",
+        detectedMode: detectedMode || 'NORMAL_CHAT',
+        activeTool: req.body.activeTool || null,
         messages: []
       });
       if (userId) await userModel.findByIdAndUpdate(userId, { $addToSet: { chatSessions: session._id } });
-    } else if (session && isGenericTitle) {
-      const aiTitle = await aiService.generateConversationTitle(content);
-      if (aiTitle) session.title = aiTitle;
+    } else if (session) {
+      if (isGenericTitle) {
+        const aiTitle = await aiService.generateConversationTitle(content);
+        if (aiTitle) session.title = aiTitle;
+      }
+      
+      // Update mode and tool if provided
+      if (detectedMode) session.detectedMode = detectedMode;
+      if (req.body.activeTool) session.activeTool = req.body.activeTool;
+      
       session.lastModified = Date.now();
       await session.save();
       finalResponse.title = session.title;
@@ -541,6 +550,8 @@ router.post('/:sessionId/message', optionalVerifyToken, identifyGuest, async (re
         guestId: guestId || null,
         projectId: (req.body.projectId === 'default' || req.body.projectId === 'all') ? null : (req.body.projectId || null),
         title: title || "New Chat",
+        detectedMode: req.body.mode || 'NORMAL_CHAT',
+        activeTool: req.body.activeTool || null,
         messages: []
       });
       if (userId) await userModel.findByIdAndUpdate(userId, { $addToSet: { chatSessions: session._id } });
@@ -554,6 +565,10 @@ router.post('/:sessionId/message', optionalVerifyToken, identifyGuest, async (re
       } else if (guestId) {
         if (session.guestId && session.guestId !== guestId) return res.status(403).json({ error: 'Access denied' });
       }
+      
+      // Update metadata on existing session if provided
+      if (req.body.mode) session.detectedMode = req.body.mode;
+      if (req.body.activeTool) session.activeTool = req.body.activeTool;
     }
 
     // Upsert message
