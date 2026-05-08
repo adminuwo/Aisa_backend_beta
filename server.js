@@ -7,6 +7,7 @@ import chatRoutes from "./routes/chatRoutes.js";
 import dashboardRoutes from "./routes/dashboardRoutes.js";
 import agentRoutes from "./routes/agentRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
+import ssoRoutes from "./routes/ssoRoutes.js";
 import cookieParser from "cookie-parser";
 import emailVerification from "./routes/emailVerification.js"
 import userRoute from './routes/user.js'
@@ -95,13 +96,21 @@ connectDB().then(async () => {
 
 // Middleware
 
-app.use(cors({
-  origin: true, // Allow any origin in development
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-device-fingerprint'],
-  exposedHeaders: ['Content-Type', 'Authorization']
-}));
+// Permissive CORS Middleware
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  }
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, content-type, Authorization, authorization, Accept, accept, X-Requested-With, x-requested-with, x-device-fingerprint, Origin, origin');
+  
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+  next();
+});
 app.use(cookieParser())
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
@@ -130,6 +139,7 @@ app.use((req, res, next) => {
 // Auth & User
 app.use('/api/auth/verify-email', emailVerification);
 app.use('/api/auth', authRoutes);
+app.use('/api/auth/sso', ssoRoutes);
 app.use('/api/user', userRoute);
 app.use('/api/user', dataRoutes);  // GDPR data deletion & export
 app.use('/api/legal', legalRoutes);
