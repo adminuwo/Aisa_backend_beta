@@ -53,7 +53,7 @@ else if (projectId) {
 import { getConfig, getFullSystemInstruction } from '../services/configService.js';
 
 // Model name - Set strictly to user's explicit request
-// Model name - Set to gemini-2.5-flash as requested. 
+// Model name - Set to gemini-1.5-flash (gemini-2.5-flash is not a valid model name). 
 export const modelName = "gemini-2.5-flash";
 
 /**
