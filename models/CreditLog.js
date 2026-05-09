@@ -6,6 +6,7 @@ const creditLogSchema = new mongoose.Schema({
     description: { type: String, default: '' }, // human-readable label
     credits: { type: Number, required: true },  // negative = deducted, positive = added
     balanceAfter: { type: Number, required: true },
+    category: { type: String, default: 'General' },
     createdAt: { type: Date, default: Date.now, index: true }
 }, { timestamps: false });
 

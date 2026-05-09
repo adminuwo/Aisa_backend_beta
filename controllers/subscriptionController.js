@@ -195,3 +195,56 @@ export const purchaseCredits = async (req, res) => {
         res.status(500).json({ success: false, message: error.message });
     }
 };
+
+export const deductCredits = async (req, res) => {
+    try {
+        const userId = req.user.id || req.user._id;
+        const { amount, description, tool, category } = req.body;
+
+        if (!amount || amount <= 0) {
+            return res.status(400).json({ success: false, message: "Invalid amount" });
+        }
+
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({ success: false, message: "User not found" });
+        }
+
+        if (user.credits < amount) {
+            return res.status(403).json({ 
+                success: false, 
+                code: 'OUT_OF_CREDITS',
+                message: "Insufficient credits",
+                available: user.credits
+            });
+        }
+
+        // Atomically deduct credits
+        const updatedUser = await User.findByIdAndUpdate(
+            userId,
+            { $inc: { credits: -amount } },
+            { new: true }
+        );
+
+        // 📝 Log Credit Deduction
+        const log = await CreditLog.create({
+            userId,
+            action: tool || 'tool_usage',
+            description: description || `Used tool: ${tool}`,
+            credits: -amount,
+            balanceAfter: updatedUser.credits,
+            category: category || 'AI Legal'
+        });
+
+        res.status(200).json({
+            success: true,
+            credits: updatedUser.credits,
+            log,
+            message: "Credits deducted successfully."
+        });
+    } catch (error) {
+        console.error("Deduct Credits Error:", error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
