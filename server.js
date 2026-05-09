@@ -1,7 +1,5 @@
 import express, { urlencoded } from "express";
-import dotenv from "dotenv";
 import 'dotenv/config';
-import cors from "cors";
 import connectDB from "./config/db.js";
 import chatRoutes from "./routes/chatRoutes.js";
 import dashboardRoutes from "./routes/dashboardRoutes.js";
@@ -57,7 +55,6 @@ import { startPlanExpiryService } from './services/planExpiryService.js';
 
 // End of standard imports
 
-dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 8080;
 
