@@ -9,6 +9,7 @@ import BrandProfile from '../models/BrandProfile.js';
 export const isFreeTierUser = async (userId) => {
     const user = await User.findById(userId);
     if (!user) return true;
+    if (user.role === 'admin' || (user.email && user.email.toLowerCase() === 'admin@uwo24.com')) return false;
     if (user.founderStatus) return false;
 
     const sub = await Subscription.findOne({
