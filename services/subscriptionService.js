@@ -53,7 +53,7 @@ export const getToolCost = (toolName, body = {}) => {
         code_writer: 3, 
         convert_audio: 90, 
         document_convert: 3, 
-        legal_toolkit: 50, 
+        legal_toolkit: 0, 
         ai_cashflow: 5
     };
 
