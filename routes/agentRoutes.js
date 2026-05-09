@@ -23,30 +23,7 @@ router.get("/", verifyToken, async (req, res) => {
     }
 });
 
-// Get user's purchased agents
-router.post("/get_my_agents", verifyToken, async (req, res) => {
-    try {
-        if (mongoose.connection.readyState !== 1) {
-            console.warn("[DB] MongoDB unreachable during get_my_agents. Returning empty list.");
-            return res.json({ agents: [] });
-        }
 
-        const userId = req.user.id || req.body.userId;
-        const user = await User.findById(userId).populate({
-            path: 'agents',
-            select: 'name description avatar category price'
-        }).lean();
-
-        if (!user) {
-            console.warn(`[GET MY AGENTS] User ${userId} not found in DB. Returning empty list.`);
-            return res.json({ agents: [] });
-        }
-        res.json({ agents: user.agents || [] });
-    } catch (err) {
-        console.error("[GET MY AGENTS ERROR]", err);
-        res.status(500).json({ error: "Failed to fetch user agents", details: err.message });
-    }
-});
 
 // "Buy" an agent
 router.post("/buy", verifyToken, async (req, res) => {
