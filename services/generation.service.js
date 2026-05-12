@@ -1005,9 +1005,9 @@ Output ONLY a raw JSON array (no markdown, no explanation) like this:
       } catch (err) {
         console.error(`       ❌ Slide ${i + 1} failed: ${err.message}`);
       }
-      // Wait 1.2s between slides to avoid rate limiting (except after last slide)
+      // Wait 3s between slides to avoid rate limiting (except after last slide)
       if (i < carouselSlides.length - 1) {
-        await new Promise(r => setTimeout(r, 1200));
+        await new Promise(r => setTimeout(r, 3000));
       }
     }
     imageUrl = generatedSlides[0] || '';

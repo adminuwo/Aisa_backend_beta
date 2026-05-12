@@ -209,21 +209,32 @@ export const uploadBrandAssets = async (req, res) => {
     let brandProfile = await BrandProfile.findOne({ workspaceId });
     if (!brandProfile) brandProfile = new BrandProfile({ workspaceId });
 
+    const parseArray = (val) => {
+      if (!val) return val;
+      if (typeof val !== 'string') return val;
+      try {
+        const parsed = JSON.parse(val);
+        return Array.isArray(parsed) ? parsed : val;
+      } catch (e) {
+        return val;
+      }
+    };
+
     if (companyName) brandProfile.companyName = companyName;
     if (website) brandProfile.website = website;
     if (logoUrl) brandProfile.logoUrl = logoUrl;
     if (brandColors) brandProfile.brandColors = typeof brandColors === 'string' ? JSON.parse(brandColors) : brandColors;
     if (themePreference) brandProfile.themePreference = themePreference;
-    if (toneOfVoice) brandProfile.toneOfVoice = toneOfVoice;
-    if (ctaStyle) brandProfile.ctaStyle = ctaStyle;
+    if (toneOfVoice) brandProfile.toneOfVoice = parseArray(toneOfVoice);
+    if (ctaStyle) brandProfile.ctaStyle = parseArray(ctaStyle);
     if (dosAndDonts) brandProfile.dosAndDonts = dosAndDonts;
-    if (targetEthnicity) brandProfile.targetEthnicity = targetEthnicity;
+    if (targetEthnicity) brandProfile.targetEthnicity = parseArray(targetEthnicity);
     if (extractedBrandSummary) brandProfile.extractedBrandSummary = extractedBrandSummary;
 
     // NEW STRATEGIC FIELDS
     if (targetIndustry) brandProfile.targetIndustry = targetIndustry;
-    if (targetAudience) brandProfile.targetAudience = targetAudience;
-    if (contentObjective) brandProfile.contentObjective = contentObjective;
+    if (targetAudience) brandProfile.targetAudience = parseArray(targetAudience);
+    if (contentObjective) brandProfile.contentObjective = parseArray(contentObjective);
     if (campaignMonth) brandProfile.campaignMonth = campaignMonth;
     if (postingFrequency) brandProfile.postingFrequency = postingFrequency;
     if (calendarDuration) brandProfile.calendarDuration = calendarDuration;

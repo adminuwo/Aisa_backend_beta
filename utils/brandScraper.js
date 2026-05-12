@@ -523,6 +523,11 @@ export const extractBrandMetadata = async (targetUrl) => {
   const siteContext = await crawlBrandContext(url, html);
 
   // 6. Single AI call: extract description + brand intelligence
+  const metaDesc =
+    $('meta[name="description"]').attr('content')?.trim() ||
+    $('meta[property="og:description"]').attr('content')?.trim() ||
+    '';
+
   let description = '';
   let toneOfVoice = 'Professional';
   let ctaStyle = 'Direct';
@@ -530,11 +535,6 @@ export const extractBrandMetadata = async (targetUrl) => {
   let industry = '';
 
   try {
-    const metaDesc =
-      $('meta[name="description"]').attr('content')?.trim() ||
-      $('meta[property="og:description"]').attr('content')?.trim() ||
-      '';
-
     const aiPrompt = `You are a senior brand strategist. Analyze this website content for the company "${brandName}" and return a JSON object with EXACTLY these keys (no extra text, no markdown):
 
 {
@@ -561,10 +561,7 @@ ${siteContext.substring(0, 8000) || 'No main content found.'}`;
     industry = parsed.industry || '';
   } catch (e) {
     // Fallback to meta description
-    description =
-      $('meta[name="description"]').attr('content')?.trim() ||
-      $('meta[property="og:description"]').attr('content')?.trim() ||
-      '';
+    description = metaDesc;
   }
 
   return {

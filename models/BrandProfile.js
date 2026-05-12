@@ -10,8 +10,8 @@ const BrandProfileSchema = new mongoose.Schema({
   logoUrl: { type: String },
   brandColors: [String],
   themePreference: { type: String },
-  toneOfVoice: { type: String },
-  ctaStyle: { type: String },
+  toneOfVoice: { type: mongoose.Schema.Types.Mixed },
+  ctaStyle: { type: mongoose.Schema.Types.Mixed },
   dosAndDonts: { type: String },
   extractedBrandSummary: { type: String },
   socialMediaLinks: {
@@ -32,15 +32,15 @@ const BrandProfileSchema = new mongoose.Schema({
     default: 'Top-Right'
   },
   brandSafeWordRules: [String],
-  targetEthnicity: { type: String, default: 'Global' },
+  targetEthnicity: { type: mongoose.Schema.Types.Mixed, default: 'Global' },
   postApprovalRequired: { type: Boolean, default: true },
   defaultSchedulingTime: { type: String, default: '10:00 AM' },
   fontFamily: { type: String, default: 'Inter' },
   
   // NEW STRATEGIC INPUTS
   targetIndustry: { type: String },
-  targetAudience: { type: String },
-  contentObjective: { type: String },
+  targetAudience: { type: mongoose.Schema.Types.Mixed },
+  contentObjective: { type: mongoose.Schema.Types.Mixed },
   campaignMonth: { type: String },
   postingFrequency: { type: String },
   calendarDuration: { type: String, default: '30' },
