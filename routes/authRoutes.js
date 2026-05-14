@@ -640,6 +640,55 @@ router.get("/google", async (req, res) => {
   res.redirect(`${process.env.FRONTEND_URL}/login`);
 });
 
+// POST /google — called by frontend after @react-oauth/google returns an access token
+router.post("/google", async (req, res) => {
+  try {
+    const { credential, email, name, picture } = req.body;
+
+    if (!credential || !email) {
+      return res.status(400).json({ error: "Missing required fields: credential and email are required" });
+    }
+
+    // Verify the access token with Google and extract the Google sub (providerId)
+    let googleId;
+    try {
+      const tokenInfo = await axios.get(
+        `https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=${credential}`
+      );
+      // tokeninfo returns "sub" for ID tokens and "user_id" for access tokens
+      googleId = tokenInfo.data.sub || tokenInfo.data.user_id || email;
+    } catch (tokenErr) {
+      // Fallback: verify by calling userinfo endpoint
+      try {
+        const userInfo = await axios.get("https://www.googleapis.com/oauth2/v3/userinfo", {
+          headers: { Authorization: `Bearer ${credential}` },
+        });
+        googleId = userInfo.data.sub || email;
+      } catch (userInfoErr) {
+        console.error("[Google Login] Token verification failed:", userInfoErr.message);
+        return res.status(401).json({ error: "Invalid or expired Google access token" });
+      }
+    }
+
+    // Delegate to the shared social-user handler (isRedirect=false → returns JSON)
+    await handleSocialUser(
+      {
+        email,
+        name: name || email.split("@")[0],
+        picture: picture || "",
+        provider: "google",
+        providerId: String(googleId),
+      },
+      req,
+      res,
+      false // return JSON, not a redirect
+    );
+  } catch (err) {
+    console.error("[Google Login Error]:", err);
+    res.status(500).json({ error: "Google login failed on server" });
+  }
+});
+
 router.get("/github", (req, res) => {
   const { email } = req.query;
   if (!process.env.GITHUB_CLIENT_ID) return res.send(devLoginTemplate('GitHub', email));

@@ -26,129 +26,145 @@ const getGenAIClient = () => new GoogleGenAI({
 });
 
 export const generateImageFromPrompt = async (prompt, originalImage = null, aspectRatio = '1:1', selectedModelId = 'gemini-2.5-flash-image', manualEditMode = null) => {
-    const startTime = Date.now();
-    try {
-        if (!process.env.GCP_PROJECT_ID) {
-            throw new Error('Missing GCP_PROJECT_ID in environment');
-        }
+        const startTime = Date.now();
+        // ── RETRY LOGIC ──────────────────────────────────────────────
+        let retryCount = 0;
+        const maxRetries = 2;
 
-        // Validate and resolve model — fall back to default if unknown
-        const model = GEMINI_IMAGE_MODELS.includes(selectedModelId) ? selectedModelId : DEFAULT_IMAGE_MODEL;
-
-        console.log('\n' + '─'.repeat(55));
-        console.log(`🎨  IMAGE ${originalImage ? 'EDIT' : 'GEN'} ─ ${model}`);
-        console.log('─'.repeat(55));
-        console.log(`  • Prompt  : "${prompt.substring(0, 80)}${prompt.length > 80 ? '...' : ''}"`);
-        console.log(`  • Mode    : ${originalImage ? '📝 EDITING existing image' : '✨ GENERATING new image'}`);
-        console.log(`  • Ratio   : ${aspectRatio}`);
-        console.log(`  • Model   : ${model}`);
-        console.log(`  • SDK     : @google/genai | location: global`);
-        console.log('─'.repeat(55));
-
-        const client = getGenAIClient();
-        let base64Data = null;
-        let mimeType = 'image/png';
-
-        if (originalImage) {
-            // ── IMAGE EDITING ───────────────────────────────────────────
-            const imageBytes = originalImage.includes('base64,')
-                ? originalImage.split('base64,')[1]
-                : originalImage;
-
-            console.log(`⏳ [Step 1/3] Sending image + prompt to ${model} via generateContent...`);
-            const response = await client.models.generateContent({
-                model,
-                contents: [{
-                    role: 'user',
-                    parts: [
-                        { inlineData: { mimeType: 'image/png', data: imageBytes } },
-                        { text: prompt },
-                    ],
-                }],
-                config: {
-                    responseModalities: [Modality.TEXT, Modality.IMAGE],
-                },
-            });
-            console.log(`✅ [Step 1/3] Response received from ${model}`);
-
-            console.log(`🔍 [Step 2/3] Extracting image data from response parts...`);
-            for (const part of response.candidates[0].content.parts) {
-                if (part.text) {
-                    console.log(`   • Model note: ${part.text.substring(0, 100)}`);
-                } else if (part.inlineData) {
-                    base64Data = part.inlineData.data;
-                    mimeType = part.inlineData.mimeType || 'image/png';
-                    console.log(`   ✅ Image data extracted | MIME: ${mimeType} | Size: ~${Math.round(base64Data.length * 0.75 / 1024)}KB`);
+        while (true) {
+            try {
+                if (!process.env.GCP_PROJECT_ID) {
+                    throw new Error('Missing GCP_PROJECT_ID in environment');
                 }
-            }
 
-            if (!base64Data) {
-                throw new Error('Model returned no image for editing request.');
-            }
-        } else {
-            // ── IMAGE GENERATION ───────────────────────────────────────────
-            console.log(`⏳ [Step 1/3] Sending prompt to ${model} via generateContentStream...`);
-            const response = await client.models.generateContentStream({
-                model,
-                contents: prompt,
-                config: {
-                    responseModalities: [Modality.TEXT, Modality.IMAGE],
-                },
-            });
+                // Validate and resolve model — fall back to default if unknown
+                const model = GEMINI_IMAGE_MODELS.includes(selectedModelId) ? selectedModelId : DEFAULT_IMAGE_MODEL;
 
-            console.log(`📡 [Step 1/3] Stream opened, receiving chunks...`);
-            let chunkCount = 0;
-            for await (const chunk of response) {
-                chunkCount++;
-                if (chunk.text) {
-                    console.log(`   • Model says: ${chunk.text.substring(0, 100)}`);
-                } else if (chunk.data) {
-                    base64Data = Buffer.from(chunk.data).toString('base64');
-                    console.log(`   • Chunk #${chunkCount}: raw binary data received`);
-                }
-                const parts = chunk.candidates?.[0]?.content?.parts || [];
-                for (const part of parts) {
-                    if (part.inlineData?.data) {
-                        base64Data = part.inlineData.data;
-                        mimeType = part.inlineData.mimeType || 'image/png';
-                        console.log(`   ✅ Chunk #${chunkCount}: inlineData image | MIME: ${mimeType}`);
+                console.log('\n' + '─'.repeat(55));
+                console.log(`🎨  IMAGE ${originalImage ? 'EDIT' : 'GEN'} ─ ${model} (Attempt ${retryCount + 1})`);
+                console.log('─'.repeat(55));
+                console.log(`  • Prompt  : "${prompt.substring(0, 80)}${prompt.length > 80 ? '...' : ''}"`);
+                console.log(`  • Mode    : ${originalImage ? '📝 EDITING existing image' : '✨ GENERATING new image'}`);
+                console.log(`  • Ratio   : ${aspectRatio}`);
+                console.log(`  • Model   : ${model}`);
+                console.log(`  • SDK     : @google/genai | location: global`);
+                console.log('─'.repeat(55));
+
+                const client = getGenAIClient();
+                let base64Data = null;
+                let mimeType = 'image/png';
+
+                if (originalImage) {
+                    // ── IMAGE EDITING ───────────────────────────────────────────
+                    const imageBytes = originalImage.includes('base64,')
+                        ? originalImage.split('base64,')[1]
+                        : originalImage;
+
+                    console.log(`⏳ [Step 1/3] Sending image + prompt to ${model} via generateContent...`);
+                    const response = await client.models.generateContent({
+                        model,
+                        contents: [{
+                            role: 'user',
+                            parts: [
+                                { inlineData: { mimeType: 'image/png', data: imageBytes } },
+                                { text: prompt },
+                            ],
+                        }],
+                        config: {
+                            responseModalities: [Modality.TEXT, Modality.IMAGE],
+                        },
+                    });
+                    console.log(`✅ [Step 1/3] Response received from ${model}`);
+
+                    console.log(`🔍 [Step 2/3] Extracting image data from response parts...`);
+                    for (const part of response.candidates[0].content.parts) {
+                        if (part.text) {
+                            console.log(`   • Model note: ${part.text.substring(0, 100)}`);
+                        } else if (part.inlineData) {
+                            base64Data = part.inlineData.data;
+                            mimeType = part.inlineData.mimeType || 'image/png';
+                            console.log(`   ✅ Image data extracted | MIME: ${mimeType} | Size: ~${Math.round(base64Data.length * 0.75 / 1024)}KB`);
+                        }
                     }
+
+                    if (!base64Data) {
+                        throw new Error('Model returned no image for editing request.');
+                    }
+                } else {
+                    // ── IMAGE GENERATION ───────────────────────────────────────────
+                    console.log(`⏳ [Step 1/3] Sending prompt to ${model} via generateContentStream...`);
+                    const response = await client.models.generateContentStream({
+                        model,
+                        contents: prompt,
+                        config: {
+                            responseModalities: [Modality.TEXT, Modality.IMAGE],
+                        },
+                    });
+
+                    console.log(`📡 [Step 1/3] Stream opened, receiving chunks...`);
+                    let chunkCount = 0;
+                    for await (const chunk of response) {
+                        chunkCount++;
+                        if (chunk.text) {
+                            console.log(`   • Model says: ${chunk.text.substring(0, 100)}`);
+                        } else if (chunk.data) {
+                            base64Data = Buffer.from(chunk.data).toString('base64');
+                            console.log(`   • Chunk #${chunkCount}: raw binary data received`);
+                        }
+                        const parts = chunk.candidates?.[0]?.content?.parts || [];
+                        for (const part of parts) {
+                            if (part.inlineData?.data) {
+                                base64Data = part.inlineData.data;
+                                mimeType = part.inlineData.mimeType || 'image/png';
+                                console.log(`   ✅ Chunk #${chunkCount}: inlineData image | MIME: ${mimeType}`);
+                            }
+                        }
+                    }
+                    console.log(`✅ [Step 1/3] Stream complete. Total chunks: ${chunkCount}`);
+
+                    if (!base64Data) {
+                        throw new Error('Model returned no image for generation request.');
+                    }
+                    console.log(`🔍 [Step 2/3] Image data extracted | Size: ~${Math.round(base64Data.length * 0.75 / 1024)}KB`);
                 }
+
+                // ── UPLOAD TO GCS ──────────────────────────────────────────────
+                console.log(`☁️  [Step 3/3] Uploading to Google Cloud Storage...`);
+                const buffer = Buffer.from(base64Data, 'base64');
+                const gcsResult = await uploadToGCS(buffer, {
+                    folder: 'generated_images',
+                    filename: gcsFilename(`aisa_${originalImage ? 'edit' : 'gen'}`),
+                    mimeType,
+                });
+
+                if (gcsResult?.publicUrl) {
+                    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+                    console.log(`✅ [Step 3/3] GCS upload complete!`);
+                    console.log('─'.repeat(55));
+                    console.log(`🎉 IMAGE ${originalImage ? 'EDIT' : 'GEN'} SUCCESS in ${elapsed}s`);
+                    console.log(`🔗 URL: ${gcsResult.publicUrl.substring(0, 70)}...`);
+                    console.log('─'.repeat(55) + '\n');
+                    return gcsResult.publicUrl;
+                }
+
+                throw new Error('GCS upload returned no public URL.');
+
+            } catch (error) {
+                const isQuotaError = error.message?.includes('429') || error.message?.includes('RESOURCE_EXHAUSTED');
+                if (isQuotaError && retryCount < maxRetries) {
+                    retryCount++;
+                    const waitMs = retryCount * 5000; // 5s, 10s
+                    console.warn(`⚠️  [ImageGen] 429 Quota reached. Retrying ${retryCount}/${maxRetries} in ${waitMs / 1000}s...`);
+                    await new Promise(r => setTimeout(r, waitMs));
+                    continue;
+                }
+
+                const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+                const msg = error.message || 'Unknown error';
+                console.error(`❌ IMAGE FAILED after ${elapsed}s: ${msg}`);
+                throw new Error(`Image Generation Failed: ${msg}`);
             }
-            console.log(`✅ [Step 1/3] Stream complete. Total chunks: ${chunkCount}`);
-
-            if (!base64Data) {
-                throw new Error('Model returned no image for generation request.');
-            }
-            console.log(`🔍 [Step 2/3] Image data extracted | Size: ~${Math.round(base64Data.length * 0.75 / 1024)}KB`);
         }
-
-        // ── UPLOAD TO GCS ──────────────────────────────────────────────
-        console.log(`☁️  [Step 3/3] Uploading to Google Cloud Storage...`);
-        const buffer = Buffer.from(base64Data, 'base64');
-        const gcsResult = await uploadToGCS(buffer, {
-            folder: 'generated_images',
-            filename: gcsFilename(`aisa_${originalImage ? 'edit' : 'gen'}`),
-            mimeType,
-        });
-
-        if (gcsResult?.publicUrl) {
-            const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-            console.log(`✅ [Step 3/3] GCS upload complete!`);
-            console.log('─'.repeat(55));
-            console.log(`🎉 IMAGE ${originalImage ? 'EDIT' : 'GEN'} SUCCESS in ${elapsed}s`);
-            console.log(`🔗 URL: ${gcsResult.publicUrl.substring(0, 70)}...`);
-            console.log('─'.repeat(55) + '\n');
-            return gcsResult.publicUrl;
-        }
-
-        throw new Error('GCS upload returned no public URL.');
-    } catch (error) {
-        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-        const msg = error.message || 'Unknown error';
-        console.error(`❌ IMAGE FAILED after ${elapsed}s: ${msg}`);
-        throw new Error(`Image Generation Failed: ${msg}`);
-    }
 };
 
 

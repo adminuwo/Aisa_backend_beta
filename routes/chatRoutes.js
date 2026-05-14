@@ -407,11 +407,11 @@ router.get('/', optionalVerifyToken, identifyGuest, async (req, res) => {
       }
 
       sessions = await ChatSession.find(query)
-        .select('sessionId title lastModified userId projectId')
+        .select('sessionId title lastModified userId projectId activeTool detectedMode')
         .sort({ lastModified: -1 });
     } else if (guestId) {
       sessions = await ChatSession.find({ guestId: guestId })
-        .select('sessionId title lastModified guestId')
+        .select('sessionId title lastModified guestId activeTool detectedMode')
         .sort({ lastModified: -1 });
     }
     res.json(sessions);

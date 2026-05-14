@@ -302,8 +302,16 @@ export const AskVertexRaw = async (prompt, options = {}) => {
 
         // Always create a fresh, simple model without heavy system instructions
         // This avoids issues with system instruction format incompatibilities
-        const selectedModelName = options.modelOverride || modelName;
-        logger.info(`[AskVertexRaw] Using model: ${selectedModelName}`);
+        // Map virtual model names to real available Vertex/GenAI models
+        const modelMap = {
+            'gemini-2.5-flash': 'gemini-1.5-flash-002',
+            'gemini-2.5-flash-image': 'gemini-1.5-flash-002',
+            'gemini-2.5-pro': 'gemini-1.5-pro-002'
+        };
+
+        const rawModelName = options.modelOverride || modelName;
+        const selectedModelName = modelMap[rawModelName] || rawModelName;
+        logger.info(`[AskVertexRaw] Mapping: ${rawModelName} -> ${selectedModelName}`);
 
         if (useVertexAI && vertexAI) {
             // Use Vertex AI with fresh model (no system instruction for raw calls)
@@ -445,12 +453,20 @@ export const askVertex = async (prompt, context = null, options = {}) => {
 
         let model = generativeModel; // Default model
 
-        const selectedModelName = options.modelOverride || modelName;
 
         // 1. Dynamic Model Creation (if systemInstruction is provided)
         // This is crucial for "File Conversion" mode where specific JSON output instructions are needed.
+        const modelMap = {
+            'gemini-2.5-flash': 'gemini-1.5-flash-002',
+            'gemini-2.5-flash-image': 'gemini-1.5-flash-002',
+            'gemini-2.5-pro': 'gemini-1.5-pro-002'
+        };
+
+        const rawModelName = options.modelOverride || modelName;
+        const selectedModelName = modelMap[rawModelName] || rawModelName;
+        
         if (selectedModelName && genAIInstance) {
-            logger.info(`[VERTEX] Creating dynamic model instance (${selectedModelName}) with Custom System Instruction.`);
+            logger.info(`[VERTEX] Mapping: ${rawModelName} -> ${selectedModelName} (with System Instruction)`);
             model = genAIInstance.getGenerativeModel({
                 model: selectedModelName,
                 safetySettings: [
