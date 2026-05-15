@@ -99,4 +99,34 @@ export const uploadToGCS = async (fileBuffer, options = {}) => {
 export const gcsFilename = (base = 'file', ext = 'png') =>
     `${base}_${Date.now()}.${ext}`;
 
-export default { uploadToGCS, gcsFilename, getSignedUrl };
+/**
+ * Downloads a file from GCS directly via the SDK (bypasses HTTP auth, no 403 issues).
+ * Accepts either a full GCS URL (gs:// or https://storage.googleapis.com/...) or a raw gcsPath.
+ *
+ * @param {string} urlOrPath - Full GCS URL or raw path like 'logos/file.png'
+ * @returns {Promise<{ buffer: Buffer, contentType: string }>}
+ */
+export const downloadFromGCS = async (urlOrPath) => {
+    // Extract the GCS path from various URL formats
+    let gcsPath = urlOrPath;
+
+    if (urlOrPath.startsWith('gs://')) {
+        // gs://bucket-name/path/to/file
+        gcsPath = urlOrPath.replace(`gs://${BUCKET_NAME}/`, '');
+    } else if (urlOrPath.includes('storage.googleapis.com')) {
+        // https://storage.googleapis.com/bucket-name/path or signed URL
+        const urlObj = new URL(urlOrPath);
+        // pathname is like /bucket-name/path/to/file
+        gcsPath = urlObj.pathname.replace(`/${BUCKET_NAME}/`, '');
+    }
+    // else assume it's already a raw path
+
+    logger.info(`[GCS] Downloading via SDK: ${gcsPath}`);
+    const file = bucket.file(gcsPath);
+    const [contents] = await file.download();
+    const [metadata] = await file.getMetadata();
+    const contentType = metadata?.contentType || 'image/png';
+    return { buffer: contents, contentType };
+};
+
+export default { uploadToGCS, gcsFilename, getSignedUrl, downloadFromGCS };

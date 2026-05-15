@@ -96,6 +96,9 @@ router.post('/generate/regenerate', creditMiddleware, generationController.trigg
 // GET /api/social-agent/jobs/:jobId - Poll job status
 router.get('/jobs/:jobId', generationController.getJobStatus);
 
+// DELETE /api/social-agent/jobs/:jobId/cancel - Cancel an in-progress generation job
+router.delete('/jobs/:jobId/cancel', generationController.cancelJob);
+
 /**
  * Content Feed & Asset Library
  */
