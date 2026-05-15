@@ -252,6 +252,12 @@ export const creditMiddleware = async (req, res, next) => {
         }
     }
 
+    // ── INITIAL LOAD FREEBIE FOR CASHFLOW ────────────────────────────────────
+    if (url.includes('/api/stock/intraday') && req.query?.isInitialLoad === 'true') {
+        cost = 0;
+        console.log(`[CreditSystem] Bypassing credit deduction for initial AICashFlow load.`);
+    }
+
     // Pass through if cost is still 0 
     if (cost === 0) return next();
 

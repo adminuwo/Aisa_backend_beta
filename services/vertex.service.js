@@ -238,7 +238,7 @@ export const analyzeRAGRequirements = async (query) => {
         const rewriteResult = await AskVertexRaw(rewritePrompt, {
             maxOutputTokens: 200,
             temperature: 0.2,
-            modelOverride: 'gemini-1.5-flash'
+            modelOverride: 'gemini-2.5-flash'
         });
 
         const rewrittenQuery = rewriteResult.trim().replace(/^["']|["']$/g, '') || query;
@@ -304,9 +304,9 @@ export const AskVertexRaw = async (prompt, options = {}) => {
         // This avoids issues with system instruction format incompatibilities
         // Map virtual model names to real available Vertex/GenAI models
         const modelMap = {
-            'gemini-2.5-flash': 'gemini-1.5-flash-002',
-            'gemini-2.5-flash-image': 'gemini-1.5-flash-002',
-            'gemini-2.5-pro': 'gemini-1.5-pro-002'
+            'gemini-2.5-flash': 'gemini-2.5-flash',
+            'gemini-2.5-flash-image': 'gemini-2.5-flash',
+            'gemini-2.5-pro': 'gemini-2.5-pro'
         };
 
         const rawModelName = options.modelOverride || modelName;
@@ -350,9 +350,9 @@ export const AskVertexRaw = async (prompt, options = {}) => {
             });
         } catch (execErr) {
             if (execErr.message.includes("404") || execErr.message.includes("NOT_FOUND")) {
-                logger.warn(`[AskVertexRaw] Execution failed for ${selectedModelName}. Retrying with gemini-1.5-flash.`);
+                logger.warn(`[AskVertexRaw] Execution failed for ${selectedModelName}. Retrying with gemini-2.5-flash.`);
                 const fallbackModel = genAIInstance.getGenerativeModel({
-                    model: 'gemini-1.5-flash',
+                    model: 'gemini-2.5-flash',
                     generationConfig: {
                         maxOutputTokens: options.maxOutputTokens || 4096,
                         temperature: options.temperature || 0.7,
@@ -457,9 +457,9 @@ export const askVertex = async (prompt, context = null, options = {}) => {
         // 1. Dynamic Model Creation (if systemInstruction is provided)
         // This is crucial for "File Conversion" mode where specific JSON output instructions are needed.
         const modelMap = {
-            'gemini-2.5-flash': 'gemini-1.5-flash-002',
-            'gemini-2.5-flash-image': 'gemini-1.5-flash-002',
-            'gemini-2.5-pro': 'gemini-1.5-pro-002'
+            'gemini-2.5-flash': 'gemini-2.5-flash',
+            'gemini-2.5-flash-image': 'gemini-2.5-flash',
+            'gemini-2.5-pro': 'gemini-2.5-pro'
         };
 
         const rawModelName = options.modelOverride || modelName;
@@ -522,10 +522,10 @@ export const askVertex = async (prompt, context = null, options = {}) => {
         try {
             result = await model.generateContent({ contents: [{ role: 'user', parts }] });
         } catch (execErr) {
-            if ((execErr.message.includes("404") || execErr.message.includes("NOT_FOUND")) && selectedModelName !== 'gemini-1.5-flash') {
-                logger.warn(`[VERTEX] Execution failed for ${selectedModelName}. Retrying with gemini-1.5-flash.`);
+            if ((execErr.message.includes("404") || execErr.message.includes("NOT_FOUND")) && selectedModelName !== 'gemini-2.5-flash') {
+                logger.warn(`[VERTEX] Execution failed for ${selectedModelName}. Retrying with gemini-2.5-flash.`);
                 const fallbackModel = genAIInstance.getGenerativeModel({
-                    model: 'gemini-1.5-flash',
+                    model: 'gemini-2.5-flash',
                     systemInstruction: systemInstruction,
                     generationConfig: { maxOutputTokens: 4096 }
                 });
