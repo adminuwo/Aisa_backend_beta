@@ -351,6 +351,7 @@ export const generateCalendar = async (req, res) => {
     const calendarLabel = isFree ? '7-Day Preview Calendar' : '30-Day Content Calendar';
     res.json({ success: true, ...genData, planType: isFree ? 'free' : 'paid', message: `${calendarLabel} generated successfully` });
   } catch (error) {
+    console.error(`[CRITICAL] generateCalendar 500 ERROR:`, error.stack);
     logger.error(`[GenerationController] generateCalendar failed: ${error.message}`);
     res.status(500).json({ success: false, error: error.message });
   }
@@ -435,6 +436,34 @@ export const getJobStatus = async (req, res) => {
   }
 };
 
+export const cancelJob = async (req, res) => {
+  try {
+    const { jobId } = req.params;
+    logger.info(`[GenerationController] User-initiated cancellation for jobId=${jobId}`);
+
+    const job = await GenerationJob.findById(jobId);
+    if (!job) {
+      logger.warn(`[GenerationController] cancelJob: jobId=${jobId} not found`);
+      return res.status(404).json({ success: false, message: "Job not found" });
+    }
+
+    if (['completed', 'failed', 'cancelled'].includes(job.status)) {
+      logger.info(`[GenerationController] cancelJob: jobId=${jobId} already terminal (status=${job.status}), skipping`);
+      return res.json({ success: true, message: `Job already in terminal state: ${job.status}` });
+    }
+
+    job.status = 'cancelled';
+    job.error = 'Cancelled by user';
+    await job.save();
+
+    logger.info(`[GenerationController] cancelJob: jobId=${jobId} marked as cancelled`);
+    res.json({ success: true, message: 'Job cancelled successfully' });
+  } catch (error) {
+    logger.error(`[GenerationController] cancelJob failed: ${error.message}`);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
 export const exportCalendarExcel = async (req, res) => {
   try {
     const { workspaceId } = req.query;
@@ -496,17 +525,11 @@ export const generateVisualPost = async (req, res) => {
 
     console.log(`  ✅ Job created   : ${job._id}`);
     
-    // 💰 Deduct credits for the pipeline request
-    if (req.creditMeta) {
-      await subscriptionService.deductCreditsFromMeta(req.creditMeta).catch(e => {
-        logger.error(`[VisualPost] Credit deduction failed but job started: ${e.message}`);
-      });
-    }
-
     console.log(`  ⚡ Dispatching pipeline in background...`);
 
     // Fire and forget — background visual generation
-    generationService.generateVisualPostForEntry(workspaceId, calendarEntryId, job._id, modelId, postFormat, aspectRatio, carouselCount)
+    // Credit deduction happens INSIDE the service only on successful completion
+    generationService.generateVisualPostForEntry(workspaceId, calendarEntryId, job._id, modelId, postFormat, aspectRatio, carouselCount, req.creditMeta)
       .catch(err => {
         console.error(`\n❌ [VisualPost] Background job ${job._id} FAILED: ${err.message}`);
         logger.error(`[VisualPost] Background job ${job._id} failed: ${err.message}`);

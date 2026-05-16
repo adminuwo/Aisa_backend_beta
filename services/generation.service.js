@@ -17,7 +17,7 @@ import mongoose from 'mongoose';
 import { generateImageFromPrompt } from '../controllers/image.controller.js';
 import { GoogleGenAI, Modality } from '@google/genai';
 import axios from 'axios';
-import { uploadToGCS, gcsFilename } from './gcs.service.js';
+import { uploadToGCS, gcsFilename, downloadFromGCS } from './gcs.service.js';
 import sharp from 'sharp';
 
 // --- JSON RECOVERY SYSTEM ---
@@ -89,40 +89,102 @@ export const generate30DayStrategy = async (workspaceId, { maxDays = null } = {}
     let calendar = await ContentCalendar.findOne({ workspaceId });
     if (!calendar) calendar = await ContentCalendar.create({ workspaceId, currentPlan: [] });
 
-    // 1. STRATEGY
-    const strategistPrompt = `
-      Create a high-performance social media content strategy for the month of ${brand.campaignMonth || 'Current'}.
-      
-      --- BRAND CORE ---
-      BRAND NAME: ${brand.companyName || 'Not specified'}
-      TARGET INDUSTRY: ${brand.targetIndustry || 'Not specified'}
-      TARGET AUDIENCE: ${brand.targetAudience || 'Not specified'}
-      REGION/ETHNICITY: ${brand.targetEthnicity || 'Global'}
-      
-      --- CONTENT GUIDELINES ---
-      CONTENT OBJECTIVE (GOAL): ${brand.contentObjective || "Awareness"}
-      POSTING FREQUENCY: ${brand.postingFrequency || '3x per week'}
-      ARCHETYPE (VOICE/TONE): ${brand.toneOfVoice || 'Professional'}
-      CONVERSION CTA STYLE: ${brand.ctaStyle || 'Direct & Authoritative'}
-      
-      --- BRAND KNOWLEDGE ---
-      BRAND DNA: ${brand.extractedBrandSummary || 'Not specified'}
-      DOCUMENT CONTEXT: ${brand.companyOverviewText ? brand.companyOverviewText.substring(0, 3000) : 'No documents uploaded'}
+    // ─── SAFE TEXT HELPERS ────────────────────────────────────────────────────
+    const cap = (text, max = 600) => {
+      if (!text) return 'Not specified';
+      const str = typeof text === 'string' ? text : JSON.stringify(text);
+      return str.length > max ? str.substring(0, max) + '...' : str;
+    };
+    const arrayToStr = (val) => {
+      if (!val) return 'Not specified';
+      if (Array.isArray(val)) return val.filter(Boolean).join(', ') || 'Not specified';
+      return String(val);
+    };
 
-      OUTPUT JSON (STRICT):
-      {
-        "strategy_summary": "Concise summary",
-        "content_distribution": {"educational": "40%", "promotional": "30%", "engagement": "30%", "emotional": "0%"},
-        "platform_plan": [{"platform": "Instagram", "strategy": "Concise"}],
-        "weekly_themes": ["Theme for Week 1", "Theme for Week 2", "Theme for Week 3", "Theme for Week 4", "Theme for Week 5 (if applicable)"]
-      }
-    `;
+    // ─── RESOLVE ALL BRAND DATA (Manual + AI-fetched structuredIdentity merged) ─
+    const si = brand.structuredIdentity || {};
+    const brandName     = brand.companyName || si.brand_name || 'Our Brand';
+    const industry      = brand.targetIndustry || si.industry || 'General';
+    const audience      = arrayToStr(brand.targetAudience || si.target_audience);
+    const region        = arrayToStr(brand.targetEthnicity) || 'Global';
+    const objective     = arrayToStr(brand.contentObjective) || 'Awareness';
+    const tone          = arrayToStr(brand.toneOfVoice || si.tone) || 'Professional';
+    const ctaStyle      = arrayToStr(brand.ctaStyle || si.cta_style) || 'Direct';
+    const colors        = arrayToStr(brand.brandColors || si.color_palette) || 'Brand default';
+    const platforms     = arrayToStr(si.platform_focus) || 'Instagram, LinkedIn, Twitter';
+    const products      = arrayToStr(si.products_services);
+    const brandValues   = arrayToStr(si.brand_values);
+    const contentAngles = arrayToStr(si.content_angles);
+    const dosAndDonts   = cap(brand.dosAndDonts, 400);
+    // Hard-cap long text fields to keep prompts under token limit
+    const manualDesc    = cap(brand.extractedBrandSummary, 800);
+    const docContext    = brand.companyOverviewText ? cap(brand.companyOverviewText, 800) : 'No documents uploaded';
 
-    const stratRes = await AskOpenAIRaw(strategistPrompt, null, {
-      jsonMode: true,
-      systemInstruction: "You are a Brand Strategist. Output ONLY the requested JSON object. No conversational text."
-    });
-    const strategyDoc = safeParse(stratRes);
+    // ─── FREQUENCY → posts/week ───────────────────────────────────────────────
+    const freq = (brand.postingFrequency || '3x per week').toLowerCase();
+    let postsPerWeek = 3;
+    let userSelectedDuration = 30;
+    if (freq.includes('7 days'))        { postsPerWeek = 7;  userSelectedDuration = 7; }
+    else if (freq.includes('2x daily')) { postsPerWeek = 14; }
+    else if (freq === 'daily')          { postsPerWeek = 7;  }
+    else if (freq.includes('3x'))       { postsPerWeek = 3;  }
+    else if (freq.includes('1x'))       { postsPerWeek = 1;  }
+
+    // ─── DATE SETUP ───────────────────────────────────────────────────────────
+    const monthMap = {
+      january:0,february:1,march:2,april:3,may:4,june:5,
+      july:6,august:7,september:8,october:9,november:10,december:11
+    };
+    const selectedMonth    = (brand.campaignMonth || 'January').toLowerCase();
+    const monthIndex       = monthMap[selectedMonth] ?? new Date().getMonth();
+    const currentYear      = new Date().getFullYear();
+    const startDate        = new Date(currentYear, monthIndex, 1);
+    const totalDaysInMonth = new Date(currentYear, monthIndex + 1, 0).getDate();
+    const effectiveDays    = maxDays
+      ? Math.min(maxDays, totalDaysInMonth)
+      : Math.min(userSelectedDuration, totalDaysInMonth);
+    const totalWeeks = Math.ceil(effectiveDays / 7);
+
+    console.log(`[Stage 2] Brand: ${brandName} | ${postsPerWeek}x/wk | Month: ${brand.campaignMonth} | Days: ${effectiveDays} | Weeks: ${totalWeeks}${maxDays ? ' [FREE]' : ''}`);
+
+    // ─── PHASE 1: STRATEGY (Vertex AI — large context, no token overflow) ─────
+    const strategistPrompt = `You are a senior social media strategist. Create a concise monthly content strategy.
+
+BRAND: ${brandName}
+INDUSTRY: ${industry}
+AUDIENCE: ${audience}
+REGION: ${region}
+OBJECTIVE: ${objective}
+TONE: ${tone}
+CTA STYLE: ${ctaStyle}
+BRAND COLORS: ${colors}
+PLATFORMS: ${platforms}
+PRODUCTS/SERVICES: ${products}
+BRAND VALUES: ${brandValues}
+CONTENT ANGLES: ${contentAngles}
+BRAND SUMMARY: ${manualDesc}
+DOS AND DONTS: ${dosAndDonts}
+MONTH: ${brand.campaignMonth || 'Current'}
+POSTING FREQUENCY: ${brand.postingFrequency || '3x per week'}
+
+OUTPUT ONLY this JSON (no markdown, no explanation):
+{"strategy_summary":"2 sentences max","content_distribution":{"educational":"40%","promotional":"30%","engagement":"20%","emotional":"10%"},"platform_plan":[{"platform":"Instagram","strategy":"1 sentence"}],"weekly_themes":["Week 1","Week 2","Week 3","Week 4","Week 5"]}`;
+
+    let strategyDoc = {
+      strategy_summary: `Content strategy for ${brandName} focused on ${objective}.`,
+      content_distribution: { educational: '40%', promotional: '30%', engagement: '20%', emotional: '10%' },
+      platform_plan: [{ platform: 'Instagram', strategy: 'Visual storytelling' }],
+      weekly_themes: ['Brand Awareness', 'Product Spotlight', 'Community Engagement', 'Value Education', 'Conversion Push']
+    };
+
+    try {
+      const stratRes = await AskVertexRaw(strategistPrompt);
+      const cleaned = stratRes.replace(/```json|```/g, '').trim();
+      const parsed = JSON.parse(cleaned);
+      if (parsed && parsed.weekly_themes) strategyDoc = parsed;
+    } catch (stratErr) {
+      logger.warn(`[Stage 2] Strategy phase failed, using defaults: ${stratErr.message}`);
+    }
 
     await SocialAgentWorkspace.findByIdAndUpdate(workspaceId, {
       currentStrategy: {
@@ -133,104 +195,66 @@ export const generate30DayStrategy = async (workspaceId, { maxDays = null } = {}
       }
     });
 
-    // 2. CALENDAR (Respect Month & Frequency)
-    const freq = (brand.postingFrequency || '3x per week').toLowerCase();
+    // ─── PHASE 2: CALENDAR ENTRIES (OpenAI — 2 weeks at a time, token-safe) ──
+    // Compact context block reused across all week prompts
+    const brandCtxBlock = `BRAND: ${brandName} | INDUSTRY: ${industry} | AUDIENCE: ${audience} | REGION: ${region}
+TONE: ${tone} | CTA: ${ctaStyle} | OBJECTIVE: ${objective} | COLORS: ${colors}
+BRAND SUMMARY: ${manualDesc}
+DOC CONTEXT: ${docContext}`;
 
-    let postsPerWeek = 3; // Default
-    let userSelectedDuration = 30; // Default full month
+    const allEntries = [];
+    for (let i = 0; i < totalWeeks; i += 2) {
+      const chunk = [i, i + 1].filter(w => w < totalWeeks);
+      const chunkResults = await Promise.all(chunk.map(async (weekNum) => {
+        const startDayIdx = weekNum * 7;
+        const remainingDays = effectiveDays - startDayIdx;
+        const daysInThisChunk = Math.min(7, remainingDays);
+        const postsForThisChunk = Math.ceil((daysInThisChunk / 7) * postsPerWeek);
+        const weekStartDate = new Date(startDate.getTime() + startDayIdx * 86400000)
+          .toISOString().split('T')[0];
+        const weekTheme = strategyDoc.weekly_themes[weekNum] || strategyDoc.weekly_themes[0] || 'General';
 
-    if (freq.includes('7 days')) {
-      postsPerWeek = 7; // Daily
-      userSelectedDuration = 7;
-    } else if (freq.includes('2x') || freq.includes('high')) {
-      postsPerWeek = 14;
-    } else if (freq === 'daily') {
-      postsPerWeek = 7;
-    } else if (freq.includes('3x')) {
-      postsPerWeek = 3;
-    } else if (freq.includes('1x')) {
-      postsPerWeek = 1;
+        const builderPrompt = `Create exactly ${postsForThisChunk} social media content entries for Week ${weekNum + 1} of ${brand.campaignMonth || 'this month'} ${currentYear}.
+
+CONTEXT:
+${brandCtxBlock}
+WEEK THEME: ${weekTheme}
+STRATEGY: ${cap(strategyDoc.strategy_summary, 200)}
+
+RULES:
+- All dates within ${brand.campaignMonth} ${currentYear}, starting ${weekStartDate}
+- Spread ${postsForThisChunk} posts across ${daysInThisChunk} days
+- Vary platform per post: Instagram, LinkedIn, or Twitter
+- Vary format: image, reel, or carousel (match platform)
+- heading_hook: punchy, under 10 words
+- short_caption: max 150 chars
+- long_caption: max 300 chars
+- hashtags: comma-separated string of 10-15 tags
+- breakdown: 2-3 bullet notes for post structure
+
+OUTPUT ONLY this JSON (no markdown):
+{"entries":[{"date":"YYYY-MM-DD","phase":"Awareness|Consideration|Conversion","platform":"Instagram|LinkedIn|Twitter","format":"image|reel|carousel","post_type":"image|reel|carousel","heading_hook":"...","sub_heading":"...","short_caption":"...","long_caption":"...","hashtags":"#tag1, #tag2","breakdown":"..."}]}`;
+
+        try {
+          const weekRes = await AskOpenAIRaw(builderPrompt, null, {
+            jsonMode: true,
+            max_tokens: 2000,
+            systemInstruction: 'You are a social media content planner. Output ONLY valid JSON. Keep all text values short and punchy.'
+          });
+          const parsed = safeParse(weekRes);
+          return Array.isArray(parsed) ? parsed : (parsed.entries || parsed.calendar || []);
+        } catch (weekErr) {
+          logger.error(`[Stage 2] Week ${weekNum + 1} failed: ${weekErr.message}`);
+          return [];
+        }
+      }));
+      allEntries.push(...chunkResults.flat());
     }
 
-    // Map Month String to Starting Date
-    const monthMap = {
-      'january': 0, 'february': 1, 'march': 2, 'april': 3, 'may': 4, 'june': 5,
-      'july': 6, 'august': 7, 'september': 8, 'october': 9, 'november': 10, 'december': 11
-    };
-    const selectedMonth = (brand.campaignMonth || 'January').toLowerCase();
-    const monthIndex = monthMap[selectedMonth] ?? 0;
-
-    // Use current year as base
-    const currentYear = new Date().getFullYear();
-    const startDate = new Date(currentYear, monthIndex, 1);
-
-    // Calculate actual days — cap by maxDays for free plan, otherwise use user's selected duration
-    const totalDaysInMonth = new Date(currentYear, monthIndex + 1, 0).getDate();
-    const effectiveDays = maxDays ? Math.min(maxDays, totalDaysInMonth) : Math.min(userSelectedDuration, totalDaysInMonth);
-    const totalWeeks = Math.ceil(effectiveDays / 7);
-
-    console.log(`[Stage 2] Generating ${postsPerWeek} posts/week for ${brand.campaignMonth} (${effectiveDays}/${totalDaysInMonth} days, ${totalWeeks} week chunks) starting ${startDate.toDateString()}${maxDays ? ` [FREE PLAN: capped at ${maxDays} days]` : ''}`);
-
-    const weekPromises = Array.from({ length: totalWeeks }).map(async (_, weekNum) => {
-      const startDayIdx = weekNum * 7;
-      const remainingDays = effectiveDays - startDayIdx;
-      const daysInThisChunk = Math.min(7, remainingDays);
-
-      // Calculate how many posts to generate for this specific chunk (prorated for partial weeks)
-      const postsForThisChunk = Math.ceil((daysInThisChunk / 7) * postsPerWeek);
-
-      const builderPrompt = `
-        Create exactly ${postsForThisChunk} content pipeline entries for ${weekNum === 0 ? 'the first part' : 'Part ' + (weekNum + 1)} of ${brand.campaignMonth} ${currentYear}.
-        
-        --- STRATEGIC CONTEXT ---
-        BRAND: ${brand.companyName || 'Not specified'}
-        TARGET AUDIENCE: ${brand.targetAudience || 'Not specified'}
-        REGION: ${brand.targetEthnicity || 'Global'}
-        TONE/VOICE: ${brand.toneOfVoice || 'Professional'}
-        CTA STYLE: ${brand.ctaStyle || 'Direct & Authoritative'}
-        THEME: ${strategyDoc.weekly_themes[weekNum] || strategyDoc.weekly_themes[0] || "General"}
-        BRAND DNA: ${brand.extractedBrandSummary || 'Not specified'}
-        DOCUMENT CONTEXT: ${brand.companyOverviewText ? brand.companyOverviewText.substring(0, 3000) : 'No documents uploaded'}
-        STRATEGY CONTEXT: ${strategyDoc.strategy_summary}
-        PLAN: Generate ${postsForThisChunk} high-quality, unique posts spread across this ${daysInThisChunk}-day period.
-
-        OUTPUT JSON (STRICT):
-        {
-          "entries": [
-            {
-              "date": "YYYY-MM-DD", "phase": "...", "platform": "...", "format": "...", "post_type": "...",
-              "heading_hook": "...", "sub_heading": "...", "short_caption": "...", "long_caption": "...",
-              "hashtags": "...", "breakdown": "..."
-            }
-          ]
-        }
-        
-        Important: All dates MUST be within ${brand.campaignMonth} ${currentYear}.
-        Dates start: ${new Date(startDate.getTime() + startDayIdx * 86400000).toISOString().split('T')[0]}.
-        Period length: ${daysInThisChunk} days.
-        Entries priority: Spread these across the ${daysInThisChunk} days reasonably.
-      `;
-
-      try {
-        const weekRes = await AskOpenAIRaw(builderPrompt, null, {
-          jsonMode: true,
-          systemInstruction: `You are a content writer for ${brand.campaignMonth}. Output ONLY a valid JSON object. No conversational text.`
-        });
-        const parsed = safeParse(weekRes);
-        return Array.isArray(parsed) ? parsed : (parsed.entries || parsed.calendar || []);
-      } catch (weekErr) {
-        logger.error(`[Stage 2] Week ${weekNum + 1} generation failed: ${weekErr.message}`);
-        return [];
-      }
-    });
-
-    const results = await Promise.all(weekPromises);
-    // 3. SORT AND SAVE
-    // Clear existing pending entries for this brand
+    // ─── PHASE 3: SAVE TO DB ──────────────────────────────────────────────────
     await CalendarEntry.deleteMany({ workspaceId, status: 'pending' });
 
-    // SORT strategyArray by date string (YYYY-MM-DD) to ensure absolutely sequential order
-    const sortedStrategy = results.flat()
+    const sortedStrategy = allEntries
       .filter(item => !!item.date)
       .sort((a, b) => a.date.localeCompare(b.date));
 
@@ -238,36 +262,46 @@ export const generate30DayStrategy = async (workspaceId, { maxDays = null } = {}
     for (const item of sortedStrategy) {
       if (!item.date) continue;
       const entry = await CalendarEntry.create({
-        workspaceId, calendarId: calendar._id, date: item.date, scheduledDate: new Date(item.date),
+        workspaceId, calendarId: calendar._id,
+        date: item.date, scheduledDate: new Date(item.date),
         platform: item.platform, format: item.format, postType: item.post_type,
-        title: item.heading_hook, heading_hook: item.heading_hook, sub_heading: item.sub_heading,
-        short_caption: item.short_caption, long_caption: item.long_caption, hashtags: item.hashtags,
+        title: item.heading_hook, heading_hook: item.heading_hook,
+        sub_heading: item.sub_heading, short_caption: item.short_caption,
+        long_caption: item.long_caption, hashtags: item.hashtags,
         breakdown: item.breakdown, status: 'pending'
       });
       entries.push(entry);
     }
 
+    // GCS Excel export (non-fatal)
     if (entries.length > 0) {
-      const excelBuffer = await socialAgentService.generateCalendarExcel(entries);
-      if (excelBuffer) {
-        const gcsRes = await socialAgentService.uploadBufferToGCS(excelBuffer, `Plan_${workspaceId}.xlsx`, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Calendar');
-        calendar.excelUrl = gcsRes.url;
+      try {
+        const excelBuffer = await socialAgentService.generateCalendarExcel(entries);
+        if (excelBuffer) {
+          const gcsRes = await socialAgentService.uploadBufferToGCS(
+            excelBuffer, `Plan_${workspaceId}.xlsx`,
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Calendar'
+          );
+          calendar.excelUrl = gcsRes.url;
+          logger.info(`[Stage 2] Excel uploaded to GCS: ${gcsRes.url}`);
+        }
+      } catch (excelErr) {
+        logger.warn(`[Stage 2] GCS Excel upload skipped (non-fatal): ${excelErr.message}`);
       }
     }
 
     calendar.status = 'generated';
     await calendar.save();
 
-    return { status: "success", calendar_id: calendar._id, excel_url: calendar.excelUrl, calendar: entries };
+    console.log(`[Stage 2] SUCCESS: ${entries.length} entries for ${brandName}`);
+    return { status: 'success', calendar_id: calendar._id, excel_url: calendar.excelUrl, calendar: entries };
   } catch (error) {
     logger.error(`[Stage 2] Failed: ${error.message}`);
     throw error;
   }
 };
 
-/**
- * Single Row Generation
- */
+
 export const generateContentForSpecificRow = async (workspaceId, entryId) => {
   logger.info(`[GenerationService] Initializing specific row generation: EntryID=${entryId}, WorkspaceID=${workspaceId}`);
 
@@ -531,9 +565,20 @@ const applyVisualOverlays = async (imageUrl, logoUrl, headingText, subheadingTex
 
     if (logoUrl) {
       try {
-        let logoResponse = await axios.get(logoUrl, { responseType: 'arraybuffer', timeout: 20000 });
-        let rawBuffer = Buffer.from(logoResponse.data);
-        let rawContentType = (logoResponse.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+        // Use GCS SDK download to bypass 403 on signed/private URLs
+        let rawBuffer, rawContentType;
+        try {
+          const gcsResult = await downloadFromGCS(logoUrl);
+          rawBuffer = gcsResult.buffer;
+          rawContentType = gcsResult.contentType.split(';')[0].trim().toLowerCase();
+          console.log(`    [VisualOverlay] 📥 Logo downloaded via GCS SDK: ${rawBuffer.byteLength} bytes | ${rawContentType}`);
+        } catch (gcsErr) {
+          // Fallback: try plain HTTP (for external URLs like Gravatar, Clearbit etc.)
+          console.warn(`    [VisualOverlay] ⚠️  GCS SDK download failed (${gcsErr.message}), trying HTTP fallback...`);
+          const logoResponse = await axios.get(logoUrl, { responseType: 'arraybuffer', timeout: 20000 });
+          rawBuffer = Buffer.from(logoResponse.data);
+          rawContentType = (logoResponse.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
+        }
 
         // If the logo is an ICO (unsupported by Gemini and sharp natively), convert it to PNG using Google Favicon API
         if (rawContentType.includes('icon') || logoUrl.toLowerCase().endsWith('.ico')) {
@@ -740,8 +785,19 @@ ${logoBase64 ? '6' : '3'}. Choose a contrasting color (e.g., white text on dark 
  * Step 4   │ MongoDB  → GeneratedAsset + Job update
  * Step 5   │ Calendar → Entry status marked "generated"
  */
-export const generateVisualPostForEntry = async (workspaceId, entryId, jobId, modelId = 'imagen-3.0-generate-001', postFormat = 'single', aspectRatio = '1:1', carouselCount = 3) => {
+export const generateVisualPostForEntry = async (workspaceId, entryId, jobId, modelId = 'imagen-3.0-generate-001', postFormat = 'single', aspectRatio = '1:1', carouselCount = 3, creditMeta = null) => {
   const pipelineStart = Date.now();
+
+  // Helper: check if job was cancelled in DB before/between expensive steps
+  const isCancelled = async () => {
+    const job = await GenerationJob.findById(jobId).select('status').lean();
+    if (job?.status === 'cancelled') {
+      logger.info(`[VisualPost] ⛔ Job ${jobId} cancelled by user — aborting pipeline`);
+      console.log(`\n⛔ [VisualPost] Job ${jobId} cancelled by user — stopping pipeline early`);
+      return true;
+    }
+    return false;
+  };
 
   console.log('\n' + '═'.repeat(60));
   console.log('🎨  AI ADS AGENT — VISUAL POST PIPELINE STARTED');
@@ -988,12 +1044,14 @@ Output ONLY a raw JSON array (no markdown, no explanation) like this:
     for (let i = 0; i < carouselSlides.length; i++) {
       const p = carouselSlides[i];
       console.log(`       -> Rendering Slide ${i + 1}/${carouselSlides.length}: "${p.substring(0, 40)}..."`);
+      if (await isCancelled()) return;
       try {
         const rawSlideUrl = await generateImageFromPrompt(p, null, aspectRatio, selectedModel);
         if (rawSlideUrl) {
           // ── STEP 2.5: Apply brand logo and text overlay to each slide ──
           const slideHeading = slideTexts[i]?.heading || title;
           const slideSubheading = slideTexts[i]?.subheading || hook;
+          if (await isCancelled()) return;
           const brandedSlideUrl = await applyVisualOverlays(rawSlideUrl, brand.logoUrl, slideHeading, slideSubheading, aspectRatio);
           generatedSlides.push(brandedSlideUrl);
 
@@ -1015,8 +1073,11 @@ Output ONLY a raw JSON array (no markdown, no explanation) like this:
   } else {
     // Single image generation
     console.log(`    📐 Aspect ratio : ${aspectRatio}`);
+    if (await isCancelled()) return;
     const rawImageUrl = await generateImageFromPrompt(finalImagePrompt, null, aspectRatio, selectedModel);
+    
     // ── STEP 2.5: Apply visual overlays (logo + text) ──
+    if (await isCancelled()) return;
     imageUrl = await applyVisualOverlays(rawImageUrl, brand.logoUrl, title, hook, aspectRatio);
   }
 
@@ -1029,6 +1090,9 @@ Output ONLY a raw JSON array (no markdown, no explanation) like this:
   console.log(`    ✅ Generation cycle complete in ${imagenMs}ms`);
   console.log(`    🏷️  Logo overlay : ${brand.logoUrl ? 'Applied' : 'Skipped (no logo)'}`);
   console.log(`    📐 Final images  : ${isCarousel ? generatedSlides.length + ' slides' : '1 single image'}`);
+
+  // ── CANCELLATION GUARD: Before saving asset (prevents orphan DB records on cancel) ──
+  if (await isCancelled()) return;
 
   // ── STEP 3: Save GeneratedAsset to DB ────────────────────────────
   console.log('\n[Step 3/5] 💾 Saving GeneratedAsset to MongoDB...');
@@ -1065,6 +1129,10 @@ Output ONLY a raw JSON array (no markdown, no explanation) like this:
 
   // ── STEP 4: Mark GenerationJob as Completed ──────────────────────
   console.log('\n[Step 4/5] 🔄 Updating GenerationJob status...');
+
+  // Final cancellation guard before marking complete
+  if (await isCancelled()) return;
+
   await GenerationJob.findByIdAndUpdate(jobId, {
     status: 'completed',
     completedAt: new Date(),
@@ -1078,6 +1146,16 @@ Output ONLY a raw JSON array (no markdown, no explanation) like this:
   // entry.status = 'generated'; // Visual generation should not mark content as generated
   // await entry.save();
   console.log(`    ✅ Entry ${entryId} status preserved for content generation isolation`);
+
+  // 💰 Deduct credits ONLY on successful pipeline completion (not on cancel/fail)
+  if (creditMeta) {
+    try {
+      await subscriptionService.deductCreditsFromMeta(creditMeta);
+      logger.info(`[VisualPost] 💰 Credits deducted for job ${jobId} after successful completion`);
+    } catch (e) {
+      logger.error(`[VisualPost] Credit deduction failed post-success: ${e.message}`);
+    }
+  }
 
   // ── PIPELINE COMPLETE ────────────────────────────────────────────
   const totalMs = Date.now() - pipelineStart;

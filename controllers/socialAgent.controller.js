@@ -276,9 +276,9 @@ export const uploadBrandAssets = async (req, res) => {
         structuredIdentity: {
           brand_name: companyName || brandProfile.companyName || '',
           industry: targetIndustry || '',
-          target_audience: targetAudience || '',
-          tone: toneOfVoice || 'Professional',
-          cta_style: ctaStyle || 'Direct',
+          target_audience: Array.isArray(targetAudience) ? targetAudience.join(', ') : (targetAudience || ''),
+          tone: Array.isArray(toneOfVoice) ? toneOfVoice.join(', ') : (toneOfVoice || 'Professional'),
+          cta_style: Array.isArray(ctaStyle) ? ctaStyle.join(', ') : (ctaStyle || 'Direct'),
           products_services: [],
           brand_values: [],
           content_angles: [],
@@ -294,6 +294,11 @@ export const uploadBrandAssets = async (req, res) => {
     }
 
     // 1. Sync Base Properties & Structured Identity
+    if (results.structuredIdentity) {
+      if (Array.isArray(results.structuredIdentity.tone)) results.structuredIdentity.tone = results.structuredIdentity.tone.join(', ');
+      if (Array.isArray(results.structuredIdentity.cta_style)) results.structuredIdentity.cta_style = results.structuredIdentity.cta_style.join(', ');
+      if (Array.isArray(results.structuredIdentity.target_audience)) results.structuredIdentity.target_audience = results.structuredIdentity.target_audience.join(', ');
+    }
     brandProfile.structuredIdentity = results.structuredIdentity;
     brandProfile.companyName = results.structuredIdentity.brand_name || brandProfile.companyName || companyName;
     brandProfile.website = website || brandProfile.website;
@@ -315,13 +320,18 @@ export const uploadBrandAssets = async (req, res) => {
 
     // 2. Handle Logo Upload
     if (logoFile) {
-      const { url } = await socialAgentService.uploadToGCS(logoFile, `brands/${safeBrandSlug}/logo`);
-      brandProfile.logoUrl = url;
-      await new UploadAsset({
-        workspaceId, assetType: 'logo', gcsUrl: url,
-        fileName: logoFile.originalname, mimeType: logoFile.mimetype
-      }).save();
-      console.log(`[Stage 1] Logo preserved in GCS: brands/${safeBrandSlug}/logo/`);
+      try {
+        const { url } = await socialAgentService.uploadToGCS(logoFile, `brands/${safeBrandSlug}/logo`);
+        brandProfile.logoUrl = url;
+        await new UploadAsset({
+          workspaceId, assetType: 'logo', gcsUrl: url,
+          fileName: logoFile.originalname, mimeType: logoFile.mimetype
+        }).save();
+        console.log(`[Stage 1] Logo preserved in GCS: brands/${safeBrandSlug}/logo/`);
+      } catch (gcsErr) {
+        console.error(`[Stage 1] Logo GCS upload failed (non-fatal): ${gcsErr.message}`);
+        // Keep any previously stored logoUrl rather than nulling it
+      }
     } else if (logoUrl) {
       brandProfile.logoUrl = logoUrl;
     }
@@ -329,19 +339,24 @@ export const uploadBrandAssets = async (req, res) => {
     // 3. Handle Overview PDF Uploads (Multiple) — stored under a readable brand folder
     if (overviewFiles.length > 0) {
       console.log(`[Stage 1] Dispatching ${overviewFiles.length} docs to GCS: brands/${safeBrandSlug}/strategy_docs/`);
-      const uploadPromises = overviewFiles.map(async (file) => {
-        const { url } = await socialAgentService.uploadToGCS(file, `brands/${safeBrandSlug}/strategy_docs`);
-        await new UploadAsset({
-          workspaceId, assetType: 'overview', gcsUrl: url,
-          fileName: file.originalname, mimeType: file.mimetype
-        }).save();
-        return url;
-      });
+      try {
+        const uploadPromises = overviewFiles.map(async (file) => {
+          const { url } = await socialAgentService.uploadToGCS(file, `brands/${safeBrandSlug}/strategy_docs`);
+          await new UploadAsset({
+            workspaceId, assetType: 'overview', gcsUrl: url,
+            fileName: file.originalname, mimeType: file.mimetype
+          }).save();
+          return url;
+        });
 
-      const urls = await Promise.all(uploadPromises);
-      brandProfile.companyOverviewFileUrls = urls;
-      brandProfile.companyOverviewFileUrl = urls[0]; // Legacy primary
-      console.log(`[Stage 1] ${urls.length} Strategy Docs saved to GCS: brands/${safeBrandSlug}/strategy_docs/`);
+        const urls = await Promise.all(uploadPromises);
+        brandProfile.companyOverviewFileUrls = urls;
+        brandProfile.companyOverviewFileUrl = urls[0]; // Legacy primary
+        console.log(`[Stage 1] ${urls.length} Strategy Docs saved to GCS: brands/${safeBrandSlug}/strategy_docs/`);
+      } catch (gcsErr) {
+        console.error(`[Stage 1] Document GCS upload failed (non-fatal): ${gcsErr.message}`);
+        // Brand profile still saves with text content from processBrandIdentity
+      }
     }
 
     // --- OTHER PREFERENCES ---
@@ -366,6 +381,7 @@ export const uploadBrandAssets = async (req, res) => {
 
     res.json({ success: true, brandProfile });
   } catch (error) {
+    console.error(`[CRITICAL] uploadBrandAssets 500 ERROR:`, error.stack);
     res.status(500).json({ success: false, message: error.message });
   }
 };
