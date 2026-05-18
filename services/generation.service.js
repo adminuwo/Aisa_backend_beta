@@ -753,18 +753,38 @@ ${logoBase64 ? '6' : '3'}. Choose a contrasting color (e.g., white text on dark 
       return imageUrl;
     }
 
-    // 5. Upload composited image to GCS
+    // 5. Upload composited image to GCS (with retry for transient ECONNRESET / network drops)
     const buffer = Buffer.from(resultBase64, 'base64');
-    const gcsResult = await uploadToGCS(buffer, {
-      folder: 'generated_images',
-      filename: gcsFilename('aisa_branded_post'),
-      mimeType: resultMime,
-    });
+    let gcsResult = null;
+    const maxGcsRetries = 3;
+    for (let attempt = 1; attempt <= maxGcsRetries; attempt++) {
+      try {
+        gcsResult = await uploadToGCS(buffer, {
+          folder: 'generated_images',
+          filename: gcsFilename('aisa_branded_post'),
+          mimeType: resultMime,
+        });
+        if (gcsResult?.publicUrl) break; // success
+        console.warn(`    [VisualOverlay] ⚠️  GCS attempt ${attempt}/${maxGcsRetries} returned no URL — retrying...`);
+      } catch (gcsErr) {
+        const isTransient = gcsErr.code === 'ECONNRESET' || gcsErr.code === 'ETIMEDOUT' || gcsErr.code === 'ENOTFOUND' || gcsErr.message?.includes('socket hang up');
+        console.warn(`    [VisualOverlay] ⚠️  GCS upload attempt ${attempt}/${maxGcsRetries} failed (${gcsErr.message})${isTransient ? ' [transient]' : ''}`);
+        if (attempt < maxGcsRetries) {
+          const delay = attempt * 2000; // 2s, 4s, 6s
+          console.log(`    [VisualOverlay] ⏳  Retrying GCS upload in ${delay / 1000}s...`);
+          await new Promise(r => setTimeout(r, delay));
+        } else {
+          console.warn('    [VisualOverlay] ⚠️  GCS upload failed after all retries — falling back to original.');
+          return imageUrl;
+        }
+      }
+    }
 
     if (!gcsResult?.publicUrl) {
-      console.warn('    [VisualOverlay] ⚠️  GCS upload failed — falling back to original.');
+      console.warn('    [VisualOverlay] ⚠️  GCS upload returned no URL after retries — falling back to original.');
       return imageUrl;
     }
+
 
     console.log(`    [VisualOverlay] ✅ Overlays composited in ${Date.now() - overlayStart}ms → ${gcsResult.publicUrl.substring(0, 60)}...`);
     return gcsResult.publicUrl;
