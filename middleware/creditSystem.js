@@ -107,16 +107,7 @@ export const creditMiddleware = async (req, res, next) => {
     // ── FREE TIER GUARD ──────────────────────────────────────────────────────
     const isPaidOnlyRoute =
         req.method !== 'GET' && (
-            url.includes('/api/video') ||
-            url.includes('/api/image') ||
-            url.includes('/api/edit-image') ||
-            url.includes('/api/chat/realtime') ||
-            url.includes('/api/aibase/chat') ||
-            url.includes('/api/aibase/knowledge') ||
-            url.includes('/api/voice') ||
-            url.includes('/api/social-agent/generate/visual-post') ||
-            req.body?.mode === 'web_search' ||
-            req.body?.mode === 'DEEP_SEARCH'
+            url.includes('/api/video')
         );
 
     // Admins bypass PLAN_RESTRICTED checks only
@@ -130,8 +121,8 @@ export const creditMiddleware = async (req, res, next) => {
             return res.status(403).json({
                 success: false,
                 code: 'PLAN_RESTRICTED',
-                error: 'This feature is only available on paid plans. Please upgrade to access images, videos, and advanced chat.',
-                message: 'This feature is only available on paid plans. Please upgrade to access images, videos, and advanced chat.'
+                error: 'Video features are locked for free users. Please upgrade your plan to access Text-to-Video and Image-to-Video Magic Cards.',
+                message: 'Video features are locked for free users. Please upgrade your plan to access Text-to-Video and Image-to-Video Magic Cards.'
             });
         }
     }
@@ -223,11 +214,9 @@ export const creditMiddleware = async (req, res, next) => {
     }
 
     // Define explicitly which actions are premium-only (Free tier cannot access them regardless of credits)
-    const premiumActions = ['video', 'image', 'generate_image', 'generate_image_hd', 'generate_image_ultra', 'edit_image', 'agent_chat', 'realtime_chat', 'voice', 'web_search', 'deep_search', 'knowledge_base', 'ai_ads_agent'];
+    const premiumActions = ['video'];
 
     if (premiumActions.includes(action)) {
-        isPremiumEndpoint = true;
-    } else if (action === 'chat' && req.body?.mode && req.body.mode !== 'NORMAL_CHAT') {
         isPremiumEndpoint = true;
     }
 
