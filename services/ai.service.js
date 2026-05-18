@@ -697,8 +697,8 @@ Title:`;
         logger.error(`[AI-TITLE] Error generateConversationTitle: ${error.message}`);
         // Last resort: substring of the message (ChatGPT-style fallback)
         const words = message.trim().split(/\s+/);
-        if (words.length <= 2) return "General Chat";
-        return words.slice(0, 5).join(' ') + (words.length > 5 ? '' : '');
+        if (!message.trim()) return "New Chat";
+        return words.slice(0, 5).join(' ') + (words.length > 5 ? '...' : '');
     }
 };
 
